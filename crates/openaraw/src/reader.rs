@@ -1,11 +1,13 @@
 //! High-level reader for an Agilent `.d` bundle directory.
 
+use openproteo_core::{
+    Analyzer, CvTerm, PrecursorInfo, RunMetadata, ScanMode, SpectrumRecord, SpectrumSource,
+};
 use std::path::{Path, PathBuf};
-use openproteo_core::{SpectrumSource, CvTerm, RunMetadata, SpectrumRecord, Analyzer, ScanMode, PrecursorInfo};
 
-use crate::raw::msscan::MSScan;
 use crate::raw::mspeak::{decode_peak_block, PeakSpectrum};
 use crate::raw::msprofile::{decode_profile_block, ProfileSpectrum};
+use crate::raw::msscan::MSScan;
 
 pub enum DecodedSpectrum {
     Peak(PeakSpectrum),
@@ -24,7 +26,7 @@ impl Reader {
     pub fn open<P: AsRef<Path>>(dir: P) -> crate::Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         let acq_data = dir.join("AcqData");
-        
+
         if !acq_data.exists() {
             return Err(crate::Error::Parse("AcqData directory not found".into()));
         }
@@ -50,7 +52,11 @@ impl Reader {
 impl SpectrumSource for Reader {
     fn run_metadata(&self) -> RunMetadata {
         let is_qtof = self.msscan.stride >= 220;
-        let instrument_name = if is_qtof { "Agilent Q-TOF" } else { "Agilent QQQ" };
+        let instrument_name = if is_qtof {
+            "Agilent Q-TOF"
+        } else {
+            "Agilent QQQ"
+        };
 
         RunMetadata {
             source_file_name: self.bundle_name.clone(),
@@ -70,8 +76,8 @@ impl SpectrumSource for Reader {
 
     fn iter_spectra<'a>(&'a mut self) -> Box<dyn Iterator<Item = SpectrumRecord> + 'a> {
         let mut index = 0;
-        
-        let iter = self.msscan.records.clone().into_iter().filter_map(move |rec| {
+
+        let iter = self.msscan.records.clone().into_iter().map(move |rec| {
             let scan_idx = index;
             index += 1;
 
@@ -81,19 +87,32 @@ impl SpectrumSource for Reader {
 
             // Try to read profile data first
             if let Some(params) = &rec.profile_params {
-                if let Ok(bytes) = crate::raw::read_bytes(&self.profile_path, params.offset, params.byte_count as usize) {
-                    if let Ok(spec) = decode_profile_block(&bytes, params, rec.min_x.unwrap_or(0.0), rec.max_x.unwrap_or(0.0)) {
+                if let Ok(bytes) = crate::raw::read_bytes(
+                    &self.profile_path,
+                    params.offset,
+                    params.byte_count as usize,
+                ) {
+                    if let Ok(spec) = decode_profile_block(
+                        &bytes,
+                        params,
+                        rec.min_x.unwrap_or(0.0),
+                        rec.max_x.unwrap_or(0.0),
+                    ) {
                         mz = spec.mz;
                         intensity = spec.intensity;
                         scan_mode = ScanMode::Profile;
                     }
                 }
             }
-            
+
             // If profile failed or not present, read centroid
             if mz.is_empty() {
                 if let Some(params) = &rec.centroid_params {
-                    if let Ok(bytes) = crate::raw::read_bytes(&self.peak_path, params.offset, params.byte_count as usize) {
+                    if let Ok(bytes) = crate::raw::read_bytes(
+                        &self.peak_path,
+                        params.offset,
+                        params.byte_count as usize,
+                    ) {
                         if let Ok(spec) = decode_peak_block(&bytes, params) {
                             mz = spec.mz;
                             intensity = spec.intensity;
@@ -107,9 +126,13 @@ impl SpectrumSource for Reader {
 
             // Setup Analyzer type
             let is_qtof = self.msscan.stride >= 220;
-            let analyzer = if is_qtof { Analyzer::TOFMS } else { Analyzer::TQMS };
+            let analyzer = if is_qtof {
+                Analyzer::TOFMS
+            } else {
+                Analyzer::TQMS
+            };
 
-            Some(SpectrumRecord {
+            SpectrumRecord {
                 index: scan_idx,
                 scan_number: rec.scan_id,
                 native_id,
@@ -136,7 +159,7 @@ impl SpectrumSource for Reader {
                         // For Q-TOF MS2, we can also extract a precursor native ID based on ScanID
                         precursor_native_id = Some(format!("scanId={}", rec.scan_id));
                     }
-                    
+
                     Some(PrecursorInfo {
                         precursor_native_id,
                         target_mz,
@@ -150,7 +173,7 @@ impl SpectrumSource for Reader {
                 mz,
                 intensity,
                 inv_mobility_per_peak: None,
-            })
+            }
         });
 
         Box::new(iter)

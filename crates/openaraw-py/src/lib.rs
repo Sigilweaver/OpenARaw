@@ -29,7 +29,11 @@ impl Spectrum {
     }
 
     fn __repr__(&self) -> String {
-        format!("Spectrum({} peaks, RT {:.2}s)", self.mz.len(), self.retention_time_sec)
+        format!(
+            "Spectrum({} peaks, RT {:.2}s)",
+            self.mz.len(),
+            self.retention_time_sec
+        )
     }
 }
 
@@ -45,7 +49,7 @@ impl RawReader {
     fn new(path: &str) -> PyResult<Self> {
         let mut reader = Reader::open(path).map_err(to_py_err)?;
         let spectra = reader.iter_spectra().collect();
-        
+
         Ok(Self { reader, spectra })
     }
 
@@ -55,7 +59,9 @@ impl RawReader {
     }
 
     fn read_spectrum(&self, scan_index: usize) -> PyResult<Spectrum> {
-        let spec = self.spectra.get(scan_index)
+        let spec = self
+            .spectra
+            .get(scan_index)
             .ok_or_else(|| PyRuntimeError::new_err(format!("scan {} out of range", scan_index)))?;
 
         Ok(Spectrum {
@@ -65,7 +71,7 @@ impl RawReader {
             retention_time_sec: spec.retention_time_sec,
         })
     }
-    
+
     fn __repr__(&self) -> String {
         format!(
             "RawReader('{}', {} scans)",

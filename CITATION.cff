@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+title: "OpenARaw: A pure-Rust reader for Agilent MassHunter .d mass-spectrometry directories"
+message: >
+  If you use OpenARaw in your research, please cite it using the metadata
+  below. Citation is encouraged and appreciated but not legally required.
+type: software
+authors:
+  - family-names: Riley
+    given-names: Nathan
+    orcid: "https://orcid.org/0009-0004-1579-7312"
+    website: "https://github.com/Sigilweaver"
+repository-code: "https://github.com/Sigilweaver/OpenARaw"
+url: "https://sigilweaver.app"
+abstract: >
+  OpenARaw is a standalone, cross-platform reader for Agilent MassHunter
+  .d mass-spectrometry data directories, implemented in pure Rust with no
+  dependency on Agilent SDKs or software. Python bindings built on PyO3
+  return spectral data for straightforward use in downstream analysis.
+  The library supports both Q-TOF (profile and centroid) and QQQ (MRM)
+  acquisitions.
+license: "Apache-2.0"
+license-url: "https://github.com/Sigilweaver/OpenARaw/blob/main/LICENSE"
+version: "0.1.0"
+keywords:
+  - mass spectrometry
+  - proteomics
+  - Agilent
+  - MassHunter
+  - bioinformatics
+  - Rust
+  - Python

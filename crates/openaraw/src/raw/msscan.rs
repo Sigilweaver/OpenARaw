@@ -1,7 +1,7 @@
 //! MSScan.bin index parsing.
 
-use std::path::Path;
 use byteorder::{ByteOrder, LittleEndian};
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct SpectrumParams {
@@ -36,12 +36,17 @@ impl MSScan {
     pub fn from_path(path: &Path) -> crate::Result<Self> {
         let bytes = std::fs::read(path)?;
         if bytes.len() < 92 {
-            return Err(crate::Error::Parse("MSScan.bin too small for header".into()));
+            return Err(crate::Error::Parse(
+                "MSScan.bin too small for header".into(),
+            ));
         }
 
         let magic = LittleEndian::read_u32(&bytes[0..4]);
         if magic != 257 {
-            return Err(crate::Error::Parse(format!("Invalid MSScan magic: {}", magic)));
+            return Err(crate::Error::Parse(format!(
+                "Invalid MSScan magic: {}",
+                magic
+            )));
         }
 
         let global_header_size = LittleEndian::read_u32(&bytes[88..92]);
@@ -54,7 +59,9 @@ impl MSScan {
         let mut stride = 0;
 
         if payload_len > 0 {
-            let first_scan_id = LittleEndian::read_u32(&bytes[global_header_size as usize..global_header_size as usize + 4]);
+            let first_scan_id = LittleEndian::read_u32(
+                &bytes[global_header_size as usize..global_header_size as usize + 4],
+            );
             for s in possible_strides.iter() {
                 let s_val = *s as usize;
                 if payload_len % s_val == 0 {
@@ -62,10 +69,19 @@ impl MSScan {
                         stride = *s;
                         break;
                     } else if payload_len > s_val {
-                        let next_scan_id = LittleEndian::read_u32(&bytes[global_header_size as usize + s_val..global_header_size as usize + s_val + 4]);
-                        let ms_level_2 = LittleEndian::read_u16(&bytes[global_header_size as usize + s_val + 20..global_header_size as usize + s_val + 22]);
-                        
-                        if (ms_level_2 == 1 || ms_level_2 == 2) && next_scan_id > first_scan_id && next_scan_id < first_scan_id + 100000 {
+                        let next_scan_id = LittleEndian::read_u32(
+                            &bytes[global_header_size as usize + s_val
+                                ..global_header_size as usize + s_val + 4],
+                        );
+                        let ms_level_2 = LittleEndian::read_u16(
+                            &bytes[global_header_size as usize + s_val + 20
+                                ..global_header_size as usize + s_val + 22],
+                        );
+
+                        if (ms_level_2 == 1 || ms_level_2 == 2)
+                            && next_scan_id > first_scan_id
+                            && next_scan_id < first_scan_id + 100000
+                        {
                             stride = *s;
                             break;
                         }
@@ -75,7 +91,10 @@ impl MSScan {
         }
 
         if stride == 0 {
-            return Err(crate::Error::Parse(format!("Cannot determine record stride for payload len {}", payload_len)));
+            return Err(crate::Error::Parse(format!(
+                "Cannot determine record stride for payload len {}",
+                payload_len
+            )));
         }
 
         let num_scans = payload_len / stride as usize;
@@ -117,19 +136,24 @@ impl MSScan {
 
             for bo in block_offsets {
                 let format_id = if stride == 186 {
-                    LittleEndian::read_u16(&record_bytes[bo..bo+2]) as u32
+                    LittleEndian::read_u16(&record_bytes[bo..bo + 2]) as u32
                 } else {
-                    LittleEndian::read_u32(&record_bytes[bo..bo+4])
+                    LittleEndian::read_u32(&record_bytes[bo..bo + 4])
                 };
 
                 let p_off = if stride == 186 { bo + 2 } else { bo + 4 };
-                let spec_offset = LittleEndian::read_u64(&record_bytes[p_off..p_off+8]);
-                let byte_count = LittleEndian::read_u32(&record_bytes[p_off+8..p_off+12]);
-                let point_count = LittleEndian::read_u32(&record_bytes[p_off+12..p_off+16]);
+                let spec_offset = LittleEndian::read_u64(&record_bytes[p_off..p_off + 8]);
+                let byte_count = LittleEndian::read_u32(&record_bytes[p_off + 8..p_off + 12]);
+                let point_count = LittleEndian::read_u32(&record_bytes[p_off + 12..p_off + 16]);
 
                 // ID 1 (Profile) has uncompressed byte count
                 let (unc_byte_count, _next_bo) = if format_id == 1 {
-                    (Some(LittleEndian::read_u32(&record_bytes[p_off+16..p_off+20])), bo + 24)
+                    (
+                        Some(LittleEndian::read_u32(
+                            &record_bytes[p_off + 16..p_off + 20],
+                        )),
+                        bo + 24,
+                    )
                 } else {
                     (None, bo + 20)
                 };
