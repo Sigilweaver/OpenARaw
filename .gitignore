@@ -10,3 +10,5 @@ re/
 *.swp
 *.swo
 .idea/
+venv/
+Cargo.lock

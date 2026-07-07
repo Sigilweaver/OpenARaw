@@ -1,0 +1,23 @@
+[package]
+name = "openaraw"
+description = "Rust reader for Agilent MassHunter .d mass spectrometry directories."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[lints]
+workspace = true
+
+[dependencies]
+byteorder = "1.5.0"
+openproteo-core = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
