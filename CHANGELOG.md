@@ -36,5 +36,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   suite (previously ad-hoc assertions) and covers the full corpus
   (332 of 338 real-world files pass end to end; the other 6 are
   malformed source uploads, not reader bugs - see
-  [docs/format/05-known-limitations.md](docs/format/05-known-limitations.md)),
+  [docs/format/06-known-limitations.md](docs/format/06-known-limitations.md)),
   up from 2 fixture files previously.

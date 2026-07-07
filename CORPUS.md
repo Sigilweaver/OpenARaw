@@ -5,7 +5,7 @@ across 29 PRIDE projects, 338 `.d` directories. 334 of the 338 are
 `AcqData` shape (the modern MassHunter LC-MS layout this reader targets);
 the remaining 4 are structurally malformed source uploads, not a
 distinct format variant - see
-[docs/format/05-known-limitations.md](docs/format/05-known-limitations.md).
+[docs/format/06-known-limitations.md](docs/format/06-known-limitations.md).
 
 The corpus covers both Q-TOF (profile and centroid/peak acquisition) and
 QQQ (MRM) instrument families. `docs/format/01-msscan.md` has the
@@ -68,5 +68,5 @@ any file back to its source, use the PRIDE accession:
   directories are excluded from conformance testing as genuinely
   malformed source data (nested duplicate folders, macOS resource-fork
   artifacts) - see
-  [docs/format/05-known-limitations.md](docs/format/05-known-limitations.md)
+  [docs/format/06-known-limitations.md](docs/format/06-known-limitations.md)
   for the exact list.

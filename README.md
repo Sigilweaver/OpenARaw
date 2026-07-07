@@ -20,7 +20,7 @@ Not yet published to crates.io or PyPI. The reader is implemented and
 validated against the full corpus (332 of 338 real-world PRIDE `.d`
 datasets pass conformance checks end to end; the remaining 6 are
 malformed source uploads, see
-[docs/format/05-known-limitations.md](docs/format/05-known-limitations.md)).
+[docs/format/06-known-limitations.md](docs/format/06-known-limitations.md)).
 
 ## Install
 
