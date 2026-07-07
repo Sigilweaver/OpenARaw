@@ -34,7 +34,7 @@ fn main() {
 
         let d_dir = parts[1];
         let path = base_dir.join(d_dir);
-        
+
         total_count += 1;
         println!("Scanning {}/{} : {}", total_count, 338, d_dir); // rough estimate of total 338
 
@@ -52,7 +52,10 @@ fn main() {
                     }
                     Err(_) => {
                         fail_count += 1;
-                        failures.push((d_dir.to_string(), "Panic during conformance check".to_string()));
+                        failures.push((
+                            d_dir.to_string(),
+                            "Panic during conformance check".to_string(),
+                        ));
                     }
                 }
             }

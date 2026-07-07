@@ -1,7 +1,7 @@
 //! MSPeak.bin (Centroid peak data) parser.
 
-use byteorder::{ByteOrder, LittleEndian};
 use crate::raw::msscan::SpectrumParams;
+use byteorder::{ByteOrder, LittleEndian};
 
 #[derive(Debug, Clone)]
 pub struct PeakSpectrum {
@@ -14,7 +14,12 @@ pub fn decode_peak_block(bytes: &[u8], params: &SpectrumParams) -> crate::Result
     let expected_len = match params.format_id {
         3 => point_count * 12,
         2 => point_count * 12,
-        _ => return Err(crate::Error::Parse(format!("Unknown peak format ID: {}", params.format_id))),
+        _ => {
+            return Err(crate::Error::Parse(format!(
+                "Unknown peak format ID: {}",
+                params.format_id
+            )))
+        }
     };
 
     if bytes.len() < expected_len {

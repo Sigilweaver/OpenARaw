@@ -26,9 +26,13 @@ pub fn parse(path: &Path) -> crate::Result<Vec<MassCalRecord>> {
         let num_coeff = LittleEndian::read_u32(&payload[offset..offset + 4]) as usize;
         let mut coeffs = Vec::with_capacity(num_coeff);
         for j in 0..std::cmp::min(num_coeff, 10) {
-            coeffs.push(LittleEndian::read_f64(&payload[offset + 4 + j * 8..offset + 12 + j * 8]));
+            coeffs.push(LittleEndian::read_f64(
+                &payload[offset + 4 + j * 8..offset + 12 + j * 8],
+            ));
         }
-        records.push(MassCalRecord { coefficients: coeffs });
+        records.push(MassCalRecord {
+            coefficients: coeffs,
+        });
     }
 
     Ok(records)

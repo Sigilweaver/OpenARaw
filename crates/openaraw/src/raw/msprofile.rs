@@ -1,8 +1,8 @@
 //! MSProfile.bin (Profile data) parser.
 
-use byteorder::{ByteOrder, LittleEndian};
-use crate::raw::msscan::SpectrumParams;
 use crate::raw::lzf;
+use crate::raw::msscan::SpectrumParams;
+use byteorder::{ByteOrder, LittleEndian};
 
 #[derive(Debug, Clone)]
 pub struct ProfileSpectrum {
@@ -10,17 +10,28 @@ pub struct ProfileSpectrum {
     pub intensity: Vec<f32>,
 }
 
-pub fn decode_profile_block(bytes: &[u8], params: &SpectrumParams, min_x: f64, max_x: f64) -> crate::Result<ProfileSpectrum> {
+pub fn decode_profile_block(
+    bytes: &[u8],
+    params: &SpectrumParams,
+    min_x: f64,
+    max_x: f64,
+) -> crate::Result<ProfileSpectrum> {
     if bytes.len() < 16 {
-        return Err(crate::Error::Parse("MSProfile block too short for preamble".into()));
+        return Err(crate::Error::Parse(
+            "MSProfile block too short for preamble".into(),
+        ));
     }
 
-    let uncompressed_len = params.uncompressed_byte_count
-        .ok_or_else(|| crate::Error::Parse("Missing UncompressedByteCount for profile block".into()))? as usize;
+    let uncompressed_len = params.uncompressed_byte_count.ok_or_else(|| {
+        crate::Error::Parse("Missing UncompressedByteCount for profile block".into())
+    })? as usize;
 
     let point_count = params.point_count as usize;
     if point_count == 0 {
-        return Ok(ProfileSpectrum { mz: vec![], intensity: vec![] });
+        return Ok(ProfileSpectrum {
+            mz: vec![],
+            intensity: vec![],
+        });
     }
 
     // Decompress the LZF stream starting at offset 16
@@ -28,7 +39,9 @@ pub fn decode_profile_block(bytes: &[u8], params: &SpectrumParams, min_x: f64, m
 
     // First 16 bytes (4 ints) of uncompressed data are padding/reserved
     if dec_bytes.len() < 16 + point_count * 4 {
-        return Err(crate::Error::Parse("Decompressed profile block too short for point count".into()));
+        return Err(crate::Error::Parse(
+            "Decompressed profile block too short for point count".into(),
+        ));
     }
 
     let mut intensity = Vec::with_capacity(point_count);
