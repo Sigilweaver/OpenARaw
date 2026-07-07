@@ -1,7 +1,7 @@
 //! High-level reader for an Agilent `.d` bundle directory.
 
 use std::path::{Path, PathBuf};
-use openproteo_core::{SpectrumSource, CvTerm, RunMetadata, SpectrumRecord, Analyzer, ScanMode};
+use openproteo_core::{SpectrumSource, CvTerm, RunMetadata, SpectrumRecord, Analyzer, ScanMode, PrecursorInfo};
 
 use crate::raw::msscan::MSScan;
 use crate::raw::mspeak::{decode_peak_block, PeakSpectrum};
@@ -126,7 +126,27 @@ impl SpectrumSource for Reader {
                 high_mz: rec.max_x,
                 ion_injection_time_ms: None,
                 inv_mobility: None,
-                precursor: None,
+                precursor: if rec.ms_level >= 2 {
+                    let mut precursor_native_id = None;
+                    let mut target_mz = None;
+                    if let Some(mrm_id) = rec.mrm_channel_id {
+                        precursor_native_id = Some(format!("mrm_channel={}", mrm_id));
+                    } else if let Some(mz) = rec.target_mz {
+                        target_mz = Some(mz);
+                        // For Q-TOF MS2, we can also extract a precursor native ID based on ScanID
+                        precursor_native_id = Some(format!("scanId={}", rec.scan_id));
+                    }
+                    
+                    Some(PrecursorInfo {
+                        precursor_native_id,
+                        target_mz,
+                        selected_mz: None,
+                        collision_energy: None,
+                        ..Default::default()
+                    })
+                } else {
+                    None
+                },
                 mz,
                 intensity,
                 inv_mobility_per_peak: None,

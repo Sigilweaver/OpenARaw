@@ -19,6 +19,8 @@ pub struct ScanRecord {
     pub ms_level: u32,
     pub min_x: Option<f64>,
     pub max_x: Option<f64>,
+    pub mrm_channel_id: Option<u32>,
+    pub target_mz: Option<f64>,
     pub profile_params: Option<SpectrumParams>,
     pub centroid_params: Option<SpectrumParams>,
 }
@@ -48,20 +50,30 @@ impl MSScan {
         }
 
         let payload_len = bytes.len() - global_header_size as usize;
-        // The stride can be inferred if we know the scan count, but we can also infer it from known instrument types.
-        // Let's determine stride based on typical values or just assume it's one of the known ones.
-        // Wait, is there a way to definitively know stride?
-        // Let's check common strides: 186, 196, 220, 284
-        // To find the exact stride, we can check payload_len % stride == 0.
-        // Since payload_len is large, there's usually only one valid stride.
-        let possible_strides = [284, 220, 196, 186];
+        let possible_strides = [284, 220, 216, 196, 186];
         let mut stride = 0;
-        for s in possible_strides.iter() {
-            if payload_len % *s as usize == 0 {
-                stride = *s;
-                break;
+
+        if payload_len > 0 {
+            let first_scan_id = LittleEndian::read_u32(&bytes[global_header_size as usize..global_header_size as usize + 4]);
+            for s in possible_strides.iter() {
+                let s_val = *s as usize;
+                if payload_len % s_val == 0 {
+                    if payload_len == s_val {
+                        stride = *s;
+                        break;
+                    } else if payload_len > s_val {
+                        let next_scan_id = LittleEndian::read_u32(&bytes[global_header_size as usize + s_val..global_header_size as usize + s_val + 4]);
+                        let ms_level_2 = LittleEndian::read_u16(&bytes[global_header_size as usize + s_val + 20..global_header_size as usize + s_val + 22]);
+                        
+                        if (ms_level_2 == 1 || ms_level_2 == 2) && next_scan_id > first_scan_id && next_scan_id < first_scan_id + 100000 {
+                            stride = *s;
+                            break;
+                        }
+                    }
+                }
             }
         }
+
         if stride == 0 {
             return Err(crate::Error::Parse(format!("Cannot determine record stride for payload len {}", payload_len)));
         }
@@ -74,8 +86,13 @@ impl MSScan {
             let record_bytes = &bytes[offset..offset + stride as usize];
 
             let scan_id = LittleEndian::read_u32(&record_bytes[0..4]);
+            let mrm_channel_id = if stride == 186 || stride == 196 {
+                Some(LittleEndian::read_u32(&record_bytes[4..8]))
+            } else {
+                None
+            };
             let retention_time_min = LittleEndian::read_f64(&record_bytes[12..20]);
-            let ms_level = LittleEndian::read_u32(&record_bytes[20..24]);
+            let ms_level = LittleEndian::read_u16(&record_bytes[20..22]) as u32;
 
             let mut min_x = None;
             let mut max_x = None;
@@ -92,6 +109,7 @@ impl MSScan {
             let block_offsets = match stride {
                 186 => vec![136],
                 196 => vec![144],
+                216 => vec![152],
                 220 => vec![156],
                 284 => vec![156, 220],
                 _ => vec![],
@@ -131,12 +149,20 @@ impl MSScan {
                 }
             }
 
+            let target_mz = if ms_level >= 2 && mrm_channel_id.is_none() {
+                Some(LittleEndian::read_f64(&record_bytes[84..92]))
+            } else {
+                None
+            };
+
             records.push(ScanRecord {
                 scan_id,
                 retention_time_min,
                 ms_level,
                 min_x,
                 max_x,
+                mrm_channel_id,
+                target_mz,
                 profile_params,
                 centroid_params,
             });
