@@ -21,6 +21,7 @@ The `GlobalHeaderSize` is stored as a 32-bit little-endian integer at file offse
 | PXD007734 | Q-TOF (Peak only)      | G6540B  | 228       | 220    |
 | PXD011212 | Q-TOF (Peak only)      | G6550A  | 228       | 220    |
 | PXD014285 | Q-TOF (Peak only)      | G6550A  | 228       | 220    |
+| PXD031771 | Q-TOF (Peak only)      | -       | 228       | 216    |
 
 Instrument models were read from `Devices.xml`. `G6540B` and `G6550A` are both Q-TOF instruments; `G6410A` is a triple-quadrupole (QQQ). `AcqSoftwareVersion` in `Contents.xml` confirms the `6200 series TOF/6500 series Q-TOF` firmware label on all Q-TOF files. The two distinct QQQ strides (196 vs 186) are confirmed from two separate `G6410A` datasets with different run configurations.
 
@@ -45,11 +46,12 @@ All fields are little-endian. Offsets are relative to the start of each scan rec
 - `RetentionTime` (double, minutes): Verified monotonically increasing (zero inversions) across all scans in PXD004747 (0.0001-20.3 min), PXD028295 (2.35-41.19 min), PXD001310 (0.038-60.13 min). For QQQ MRM, all scans within an MRM cycle share the same chromatographic retention time (the MRM channels all fire at the same chromatographic point).
 
 **Field confirmed at record offset 20:**
-- `MSLevel` (int32): 1 for MS1, 2 for MS2. Observed in Q-TOF (PXD001310) where scan 8 had MSLevel=2 and had a precursor ion listed at other offsets.
+- `MSLevel` (int16, not int32 - the upper two bytes at offset 22 belong to a separate field and were previously misread as part of MSLevel): 1 for MS1, 2 for MS2. Observed in Q-TOF (PXD001310) where scan 8 had MSLevel=2 and had a precursor ion listed at other offsets.
 
-**Q-TOF-specific fields (confirmed for stride=284, offsets are within the record):**
+**Q-TOF-specific fields (confirmed for stride=284):**
 - Offset 36: TIC or related intensity metric (double).
 - Offset 44: Related intensity metric (double).
+- Offset 84: Precursor Target m/z (f64, 8 bytes). Confirmed for MS2 records in Q-TOF data across multiple datasets (e.g. PXD004426, PXD007734, PXD001310). Represents the center of the isolation window for Auto-MS/MS scans.
 - Offset 244: `MinX` - minimum m/z of the scan window (double, Da). Verified equal to the scan's declared mass range lower bound.
 - Offset 252: `MaxX` - maximum m/z of the scan window (double, Da).
 
@@ -73,6 +75,7 @@ These IDs are NOT run-level properties. They are per-scan and per-block:
 |--------|-------------------|----------------|
 | 186    | 136               | int16          |
 | 196    | 144               | int32          |
+| 216    | 152               | int32          |
 | 220    | 156               | int32          |
 | 284    | 156 (profile) + 220 (centroid) | int32 |
 
