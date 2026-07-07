@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use openaraw::reader::Reader;
 use openproteo_core::write_mzml;
-use openproteo_core::SpectrumSource;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

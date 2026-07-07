@@ -1,7 +1,7 @@
 //! High-level reader for an Agilent `.d` bundle directory.
 
 use std::path::{Path, PathBuf};
-use openproteo_core::{SpectrumSource, CvTerm, PrecursorInfo, RunMetadata, SpectrumRecord, Analyzer, Polarity, ScanMode};
+use openproteo_core::{SpectrumSource, CvTerm, RunMetadata, SpectrumRecord, Analyzer, ScanMode};
 
 use crate::raw::msscan::MSScan;
 use crate::raw::mspeak::{decode_peak_block, PeakSpectrum};

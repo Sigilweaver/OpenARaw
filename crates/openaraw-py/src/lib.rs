@@ -1,6 +1,5 @@
 // PyO3 bindings for the openaraw library.
 
-use std::path::PathBuf;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 

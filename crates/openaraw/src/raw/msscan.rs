@@ -110,7 +110,7 @@ impl MSScan {
                 let point_count = LittleEndian::read_u32(&record_bytes[p_off+12..p_off+16]);
 
                 // ID 1 (Profile) has uncompressed byte count
-                let (unc_byte_count, next_bo) = if format_id == 1 {
+                let (unc_byte_count, _next_bo) = if format_id == 1 {
                     (Some(LittleEndian::read_u32(&record_bytes[p_off+16..p_off+20])), bo + 24)
                 } else {
                     (None, bo + 20)
