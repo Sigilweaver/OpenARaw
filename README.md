@@ -1,22 +1,67 @@
 # OpenARaw
 
-Planned Rust and Python reader for Agilent MassHunter `.D` mass
-spectrometry data directories, clean-room reverse-engineered with no
-Agilent SDK or software dependency.
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Rust MSRV](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
-> Sibling readers in the same stack:
+> Part of the [OpenProteo](https://sigilweaver.app/openproteo/docs/)
+> stack for proteomics raw-file access. Sibling readers:
 > [OpenTFRaw](https://github.com/Sigilweaver/OpenTFRaw) (Thermo),
 > [OpenWRaw](https://github.com/Sigilweaver/OpenWRaw) (Waters),
 > [OpenTimsTDF](https://github.com/Sigilweaver/OpenTimsTDF) (Bruker).
 
+Rust and Python reader for Agilent MassHunter `.d` mass spectrometry data
+directories, clean-room reverse-engineered with no Agilent SDK or
+software dependency. Covers the modern `AcqData` MassHunter shape across
+Q-TOF (profile and centroid) and QQQ (MRM) acquisitions.
+
 ## Status
 
-Corpus-acquisition stage. There is no parser yet. See the sourcing
-strategy in the ops repo's
-[SCOPING_PLAN.md](https://github.com/Sigilweaver/ops/blob/main/SCOPING_PLAN.md#2-agilent-masshunter-d)
-and this repo's `re/ROADMAP.md` (local-only, gitignored) for the current
-phase.
+Not yet published to crates.io or PyPI. The reader is implemented and
+validated against the full corpus (332 of 338 real-world PRIDE `.d`
+datasets pass conformance checks end to end; the remaining 6 are
+malformed source uploads, see
+[docs/format/05-known-limitations.md](docs/format/05-known-limitations.md)).
+
+## Install
+
+Not yet published. Once released:
+
+```sh
+cargo add openaraw
+```
+
+```sh
+pip install openaraw
+```
+
+## Quickstart
+
+Rust:
+
+```rust
+use openaraw::reader::Reader;
+use openproteo_core::SpectrumSource;
+
+let mut reader = Reader::open("sample.d")?;
+for spectrum in reader.iter_spectra() {
+    println!("{}: {} peaks", spectrum.native_id, spectrum.mz.len());
+}
+```
+
+Python:
+
+```python
+import openaraw
+
+reader = openaraw.RawReader("sample.d")
+spectrum = reader.read_spectrum(0)
+print(spectrum.ms_level, spectrum.retention_time_sec, len(spectrum.mz))
+```
 
 ## License
 
-Apache-2.0.
+Apache-2.0. See [LICENSE](LICENSE).
+
+The format specification was developed by binary analysis of public
+mass-spectrometry datasets (PRIDE accessions). See
+[CORPUS.md](CORPUS.md) and [ATTRIBUTION.md](ATTRIBUTION.md).
