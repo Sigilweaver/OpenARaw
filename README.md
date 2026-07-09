@@ -4,7 +4,7 @@
 [![Rust MSRV](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
 > Part of the [OpenProteo](https://sigilweaver.app/openproteo/docs/)
-> stack for proteomics raw-file access. Sibling readers:
+> stack for mass spectrometry raw-file access. Sibling readers:
 > [OpenTFRaw](https://github.com/Sigilweaver/OpenTFRaw) (Thermo),
 > [OpenWRaw](https://github.com/Sigilweaver/OpenWRaw) (Waters),
 > [OpenTimsTDF](https://github.com/Sigilweaver/OpenTimsTDF) (Bruker).
