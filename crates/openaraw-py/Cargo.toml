@@ -22,5 +22,5 @@ unsafe_code = "allow"
 
 [dependencies]
 openaraw = { workspace = true }
-openproteo-core.workspace = true
+openmassspec-core.workspace = true
 pyo3 = { workspace = true }

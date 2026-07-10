@@ -18,11 +18,11 @@ let reader = Reader::open("sample.d")?;
 subdirectory (the modern MassHunter layout this reader targets - see
 [Format specification](../format/overview)).
 
-`Reader` implements `openproteo_core::SpectrumSource`, the shared trait
-every vendor reader in the OpenProteo stack implements:
+`Reader` implements `openmassspec_core::SpectrumSource`, the shared trait
+every vendor reader in the OpenMassSpec stack implements:
 
 ```rust
-use openproteo_core::SpectrumSource;
+use openmassspec_core::SpectrumSource;
 
 let metadata = reader.run_metadata();
 let scan_count = reader.spectrum_count_hint().unwrap_or(0);

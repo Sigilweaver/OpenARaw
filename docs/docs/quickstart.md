@@ -8,7 +8,7 @@ sidebar_position: 3
 
 ```rust
 use openaraw::reader::Reader;
-use openproteo_core::SpectrumSource;
+use openmassspec_core::SpectrumSource;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut reader = Reader::open("sample.d")?;

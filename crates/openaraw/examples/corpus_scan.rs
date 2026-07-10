@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
 use openaraw::reader::Reader;
-use openproteo_core::conformance::assert_source_invariants;
+use openmassspec_core::conformance::assert_source_invariants;
 
 fn main() {
     let index_path = PathBuf::from("/workspaces/Projects/Data/ARaw/index.csv");

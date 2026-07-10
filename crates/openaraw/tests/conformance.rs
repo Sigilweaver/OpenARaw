@@ -1,5 +1,5 @@
 use openaraw::reader::Reader;
-use openproteo_core::conformance::assert_source_invariants;
+use openmassspec_core::conformance::assert_source_invariants;
 use std::path::PathBuf;
 
 #[test]

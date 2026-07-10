@@ -16,7 +16,7 @@ categories = ["parser-implementations", "science"]
 
 [workspace.dependencies]
 openaraw = { path = "crates/openaraw" }
-openproteo-core = "1.0.1"
+openmassspec-core = "1.0.0"
 pyo3 = { version = "0.28.3", features = ["extension-module"] }
 thiserror = "2"
 

@@ -1,5 +1,5 @@
 use openaraw::reader::Reader;
-use openproteo_core::write_mzml;
+use openmassspec_core::write_mzml;
 use std::path::PathBuf;
 
 fn main() {

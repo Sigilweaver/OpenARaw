@@ -1,6 +1,6 @@
 //! High-level reader for an Agilent `.d` bundle directory.
 
-use openproteo_core::{
+use openmassspec_core::{
     Analyzer, CvTerm, PrecursorInfo, RunMetadata, ScanMode, SpectrumRecord, SpectrumSource,
 };
 use std::path::{Path, PathBuf};

@@ -3,7 +3,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Rust MSRV](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
-> Part of the [OpenProteo](https://sigilweaver.app/openproteo/docs/)
+> Part of the [OpenMassSpec](https://sigilweaver.app/openmassspec/docs/)
 > stack for mass spectrometry raw-file access. Sibling readers:
 > [OpenTFRaw](https://github.com/Sigilweaver/OpenTFRaw) (Thermo),
 > [OpenWRaw](https://github.com/Sigilweaver/OpenWRaw) (Waters),
@@ -40,7 +40,7 @@ Rust:
 
 ```rust
 use openaraw::reader::Reader;
-use openproteo_core::SpectrumSource;
+use openmassspec_core::SpectrumSource;
 
 let mut reader = Reader::open("sample.d")?;
 for spectrum in reader.iter_spectra() {

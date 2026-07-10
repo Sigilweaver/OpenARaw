@@ -4,7 +4,7 @@ use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
 use ::openaraw::reader::Reader;
-use ::openproteo_core::SpectrumSource;
+use ::openmassspec_core::SpectrumSource;
 
 fn to_py_err(e: ::openaraw::Error) -> PyErr {
     PyRuntimeError::new_err(format!("{e}"))
@@ -40,7 +40,7 @@ impl Spectrum {
 #[pyclass]
 pub struct RawReader {
     reader: Reader,
-    spectra: Vec<::openproteo_core::SpectrumRecord>,
+    spectra: Vec<::openmassspec_core::SpectrumRecord>,
 }
 
 #[pymethods]

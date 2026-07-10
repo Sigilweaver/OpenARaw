@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Dependency renamed `openproteo-core` -> `openmassspec-core` (1.0.0),
+  following the umbrella's rename from OpenProteo to OpenMassSpec.
+
 ### Added
 
 - Initial Rust reader (`openaraw`) for Agilent MassHunter `.d` directories

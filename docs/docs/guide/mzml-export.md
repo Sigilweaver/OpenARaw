@@ -4,8 +4,8 @@ sidebar_position: 4
 
 # mzML export
 
-OpenARaw writes mzML via `openproteo_core::write_mzml`, the same writer
-every reader in the OpenProteo stack uses, so output is consistent across
+OpenARaw writes mzML via `openmassspec_core::write_mzml`, the same writer
+every reader in the OpenMassSpec stack uses, so output is consistent across
 vendors.
 
 ```sh
@@ -16,7 +16,7 @@ Or from your own code:
 
 ```rust
 use openaraw::reader::Reader;
-use openproteo_core::write_mzml;
+use openmassspec_core::write_mzml;
 
 let mut reader = Reader::open("sample.d")?;
 let mut out = std::fs::File::create("output.mzML")?;
