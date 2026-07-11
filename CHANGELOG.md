@@ -7,10 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Dependency renamed `openproteo-core` -> `openmassspec-core` (1.0.0),
-  following the umbrella's rename from OpenProteo to OpenMassSpec.
+## [0.1.0] - 2026-07-11
 
 ### Added
 
@@ -37,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Testing
 
-- Conformance testing now runs the shared `openproteo_core` invariant
+- Conformance testing now runs the shared `openmassspec_core` invariant
   suite (previously ad-hoc assertions) and covers the full corpus
   (332 of 338 real-world files pass end to end; the other 6 are
   malformed source uploads, not reader bugs - see
