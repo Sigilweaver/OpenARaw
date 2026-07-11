@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `MSScan.bin` stride detection could slice out of bounds and panic on a
+  malformed file whose payload was 1-3 bytes long; the stride probe now
+  requires at least one full 4-byte `ScanID` before reading.
+
+### Testing
+
+- The corpus conformance tests now skip cleanly (instead of failing the
+  build) when the out-of-tree corpus is absent, e.g. on CI runners.
+
 ## [0.1.0] - 2026-07-11
 
 ### Added

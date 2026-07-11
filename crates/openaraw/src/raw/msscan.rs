@@ -58,7 +58,9 @@ impl MSScan {
         let possible_strides = [284, 220, 216, 196, 186];
         let mut stride = 0;
 
-        if payload_len > 0 {
+        // Need at least one 4-byte ScanID to probe strides; a payload of
+        // 1..=3 bytes would otherwise slice out of bounds on a malformed file.
+        if payload_len >= 4 {
             let first_scan_id = LittleEndian::read_u32(
                 &bytes[global_header_size as usize..global_header_size as usize + 4],
             );
