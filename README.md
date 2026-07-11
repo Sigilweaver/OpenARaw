@@ -16,7 +16,7 @@ Q-TOF (profile and centroid) and QQQ (MRM) acquisitions.
 
 ## Status
 
-Not yet published to crates.io or PyPI. The reader is implemented and
+Published on crates.io (`openaraw`) and PyPI (`openaraw`). The reader is
 validated against the full corpus (332 of 338 real-world PRIDE `.d`
 datasets pass conformance checks end to end; the remaining 6 are
 malformed source uploads, see

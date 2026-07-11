@@ -8,9 +8,9 @@ The canonical changelog lives at
 [`CHANGELOG.md`](https://github.com/Sigilweaver/OpenARaw/blob/main/CHANGELOG.md)
 in the repository root. The notes below mirror the latest state.
 
-## Unreleased
+## 0.1.0 - 2026-07-11
 
-Not yet published to crates.io or PyPI.
+First release. Published on crates.io (`openaraw`) and PyPI (`openaraw`).
 
 - Rust reader (`openaraw`) for Agilent MassHunter `.d` directories in the
   modern `AcqData` layout, covering Q-TOF (profile and centroid) and QQQ
