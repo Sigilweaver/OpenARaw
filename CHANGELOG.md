@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   malformed file whose payload was 1-3 bytes long; the stride probe now
   requires at least one full 4-byte `ScanID` before reading.
 
+### Security
+
+- Upgraded `pyo3` from 0.28.3 to 0.29, clearing RUSTSEC-2026-0176 and
+  RUSTSEC-2026-0177. A `cargo audit` CI workflow now guards the lockfile.
+
 ### Testing
 
 - The corpus conformance tests now skip cleanly (instead of failing the
