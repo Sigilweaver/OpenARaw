@@ -51,6 +51,7 @@ All fields are little-endian. Offsets are relative to the start of each scan rec
 **Q-TOF-specific fields (confirmed for stride=284):**
 - Offset 36: TIC or related intensity metric (double).
 - Offset 44: Related intensity metric (double).
+- Offset 76: Collision Energy in eV (f64, 8 bytes), immediately preceding the target m/z field. Confirmed for MS2 records across strides 216/220/284 by cross-referencing against `AcqMethod.xml`'s "Ramped Collision Energy" formula (`CE = slope * (mz/100) + offset`, per precursor charge state) in PXD001310 (e.g. scan 2, precursor m/z 510.93, charge 3: stored CE=13.59 vs. formula-predicted 13.593) and against a fixed-CE Auto-MS/MS method entry (`CE=40`) in PXD031771/526b_1.d, where the field reads a constant `40.0` for the matching precursor. Not confirmed for QQQ MRM records (strides 186/196), which don't use this field - see `docs/format/06-known-limitations.md`.
 - Offset 84: Precursor Target m/z (f64, 8 bytes). Confirmed for MS2 records in Q-TOF data across multiple datasets (e.g. PXD004426, PXD007734, PXD001310). Represents the center of the isolation window for Auto-MS/MS scans.
 - Offset 244: `MinX` - minimum m/z of the scan window (double, Da). Verified equal to the scan's declared mass range lower bound.
 - Offset 252: `MaxX` - maximum m/z of the scan window (double, Da).
