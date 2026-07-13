@@ -4,6 +4,18 @@ Binary telemetry log. Always present in `.d/AcqData/`. Records instrument diagno
 
 ## Status: Confirmed
 
+## Implementation Status
+
+`crates/openaraw/src/raw/msperiodicactuals.rs` decodes `ActualID` and
+`Time` (record offsets 4 and 8, constant across both variants below) into
+`ActualsRecord`. It does not decode `Value` - that requires cross-
+referencing the per-`ActualID` `DataType` from `MSActualDefs.xml` (see the
+DataType table below), which this parser does not read. `parse` has no
+caller in `Reader`/`SpectrumSource`: `openmassspec_core`'s output schema
+has no field for instrument telemetry, so this stays a raw-level API for
+downstream QC/provenance tooling rather than a stub - see the module docs
+for the corpus retention-time cross-validation.
+
 ## File Layout
 
 - **Global header:** 68 bytes.

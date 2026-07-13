@@ -19,6 +19,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   missing `Devices.xml`.
 - `start_timestamp` is now parsed from `<AcquiredTime>` in
   `AcqData/Contents.xml` instead of being hardcoded to `None`.
+- `PrecursorInfo::collision_energy` is now parsed from `MSScan.bin`
+  record offset 76 (f64, eV) for MS2 Auto-MS/MS records, instead of
+  being hardcoded to `None`. Confirmed by cross-referencing against
+  `AcqMethod.xml`'s ramped and fixed collision-energy method entries
+  across strides 216/220/284; not available for QQQ MRM records
+  (strides 186/196), which don't use this field.
+
+### Changed
+
+- `crates/openaraw/src/raw/msperiodicactuals.rs`'s `parse()` no longer
+  unconditionally returns an empty `Vec`. It now decodes the confirmed
+  68-byte header / 20-byte record layout (see
+  `docs/format/02-secondary-bins.md`) and populates `ActualsRecord`'s
+  new `actual_id` field alongside `retention_time_min`, which is set for
+  the first time. `Value` decoding (channel-dependent, requires
+  `MSActualDefs.xml`) remains out of scope. As before, this parser has
+  no caller in `Reader` - `openmassspec_core`'s output schema has no
+  telemetry field - so it remains a raw-level API for downstream
+  tooling rather than being wired into the spectrum pipeline.
+
+### Documentation
+
+- Documented why `PrecursorInfo::selected_mz` and
+  `SpectrumRecord::polarity` are always `None`: both were investigated
+  against the corpus (a mixed-polarity run in PXD031771, an exhaustive
+  per-offset scan for a second precursor m/z field) and found
+  unrecoverable from `MSScan.bin`'s current record layout, not just
+  unimplemented. See `docs/format/06-known-limitations.md`.
+- Documented why `msmasscal::parse` has no caller despite being a fully
+  confirmed decoder: the coefficients it decodes are already applied to
+  `MSPeak.bin`'s centroid data by the acquisition firmware, and
+  `openmassspec_core`'s output schema has no field for per-scan
+  calibration provenance metadata. Kept as a public raw-level API
+  rather than removed.
 
 ## [0.1.1] - 2026-07-11
 

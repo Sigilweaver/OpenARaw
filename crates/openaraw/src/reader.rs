@@ -185,7 +185,12 @@ impl SpectrumSource for Reader {
                 scan_number: rec.scan_id,
                 native_id,
                 ms_level: rec.ms_level,
-                polarity: None, // Could parse from record offset 30 if needed
+                // Not recoverable: no byte offset in the ScanRecord was
+                // found to correlate with known polarity switches (verified
+                // against PXD031771/526b_1.d, whose AcqMethod.xml defines a
+                // mid-run positive/negative polarity segment). See
+                // docs/format/06-known-limitations.md.
+                polarity: None,
                 scan_mode: Some(scan_mode),
                 analyzer: Some(analyzer),
                 filter: None,
@@ -211,8 +216,11 @@ impl SpectrumSource for Reader {
                     Some(PrecursorInfo {
                         precursor_native_id,
                         target_mz,
+                        // No second m/z field distinct from target_mz was
+                        // found anywhere in the record across the corpus;
+                        // see docs/format/06-known-limitations.md.
                         selected_mz: None,
-                        collision_energy: None,
+                        collision_energy: rec.collision_energy,
                         ..Default::default()
                     })
                 } else {

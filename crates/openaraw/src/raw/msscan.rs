@@ -21,6 +21,10 @@ pub struct ScanRecord {
     pub max_x: Option<f64>,
     pub mrm_channel_id: Option<u32>,
     pub target_mz: Option<f64>,
+    /// Precursor collision energy in eV (record offset 76, f64). Confirmed
+    /// alongside `target_mz` for Auto-MS/MS records - see
+    /// `docs/format/01-msscan.md`.
+    pub collision_energy: Option<f64>,
     pub profile_params: Option<SpectrumParams>,
     pub centroid_params: Option<SpectrumParams>,
 }
@@ -175,10 +179,18 @@ impl MSScan {
                 }
             }
 
-            let target_mz = if ms_level >= 2 && mrm_channel_id.is_none() {
-                Some(LittleEndian::read_f64(&record_bytes[84..92]))
+            // Target m/z (isolation window center) and collision energy are
+            // only confirmed for Auto-MS/MS records that use the target_mz
+            // field (i.e. not QQQ MRM transitions, which carry their own
+            // per-channel CE elsewhere and are not covered by this offset -
+            // see docs/format/01-msscan.md).
+            let (target_mz, collision_energy) = if ms_level >= 2 && mrm_channel_id.is_none() {
+                (
+                    Some(LittleEndian::read_f64(&record_bytes[84..92])),
+                    Some(LittleEndian::read_f64(&record_bytes[76..84])),
+                )
             } else {
-                None
+                (None, None)
             };
 
             records.push(ScanRecord {
@@ -189,6 +201,7 @@ impl MSScan {
                 max_x,
                 mrm_channel_id,
                 target_mz,
+                collision_energy,
                 profile_params,
                 centroid_params,
             });
