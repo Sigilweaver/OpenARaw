@@ -1,4 +1,5 @@
 pub mod lzf;
+pub mod metadata;
 pub mod msmasscal;
 pub mod mspeak;
 pub mod msperiodicactuals;

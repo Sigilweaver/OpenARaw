@@ -5,6 +5,7 @@ use openmassspec_core::{
 };
 use std::path::{Path, PathBuf};
 
+use crate::raw::metadata::{parse_acquired_time, parse_devices_xml};
 use crate::raw::mspeak::{decode_peak_block, PeakSpectrum};
 use crate::raw::msprofile::{decode_profile_block, ProfileSpectrum};
 use crate::raw::msscan::MSScan;
@@ -20,6 +21,55 @@ pub struct Reader {
     pub msscan: MSScan,
     peak_path: PathBuf,
     profile_path: PathBuf,
+    instrument: CvTerm,
+    start_timestamp: Option<String>,
+}
+
+/// Resolve a PSI-MS CV term for an Agilent instrument model read from
+/// `Devices.xml`'s `<ModelNumber>` field (e.g. `"G6550A"`). Falls back to
+/// the generic `MS:1000490` "Agilent instrument model" term for models
+/// without a dedicated PSI-MS entry (e.g. `G6540A`/`G6540B`/`G6550B`,
+/// which the CV only tracks at the unsuffixed `6540`/`6550` family level,
+/// or not at all).
+///
+/// Table built from `psi-ms.obo`, restricted to the `is_a: MS:1000490 !
+/// Agilent instrument model` subtree, matched against the exact model
+/// numbers observed across the 330-bundle validation corpus (see
+/// `CORPUS.md` and `docs/format/01-msscan.md`).
+fn instrument_cv_for_model(model: &str) -> CvTerm {
+    let known: &[(&str, &str, &str)] = &[
+        ("G6410A", "MS:1003526", "6410A Triple Quadrupole LC/MS"),
+        ("G6530A", "MS:1002786", "6530A Q-TOF LC/MS"),
+        ("G6530B", "MS:1002787", "6530B Q-TOF LC/MS"),
+        ("G6550A", "MS:1002784", "6550A iFunnel Q-TOF LC/MS"),
+    ];
+    for (m, acc, name) in known {
+        if model.eq_ignore_ascii_case(m) {
+            return CvTerm::new(acc, *name);
+        }
+    }
+    CvTerm::new("MS:1000490", "Agilent instrument model")
+}
+
+/// Resolve the run's instrument CV term, preferring the real device
+/// identity parsed from `Devices.xml` over the legacy record-stride
+/// guess. Falls back to the stride-based guess (with the same generic
+/// `MS:1000461` tag it always used) when `Devices.xml` is missing,
+/// unparseable, or lacks the fields we need - this is a real condition
+/// in the wild (see `docs/format/06-known-limitations.md`), not just a
+/// defensive fallback.
+fn resolve_instrument(acq_data: &Path, msscan: &MSScan) -> CvTerm {
+    if let Some(device) = parse_devices_xml(&acq_data.join("Devices.xml")) {
+        return instrument_cv_for_model(&device.model);
+    }
+
+    let is_qtof = msscan.stride >= 220;
+    let instrument_name = if is_qtof {
+        "Agilent Q-TOF"
+    } else {
+        "Agilent QQQ"
+    };
+    CvTerm::new("MS:1000461", instrument_name) // generic agilent node; Devices.xml unavailable
 }
 
 impl Reader {
@@ -39,33 +89,31 @@ impl Reader {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "bundle.d".into());
 
+        let instrument = resolve_instrument(&acq_data, &msscan);
+        let start_timestamp = parse_acquired_time(&acq_data.join("Contents.xml"));
+
         Ok(Reader {
             dir,
             bundle_name,
             msscan,
             peak_path: acq_data.join("MSPeak.bin"),
             profile_path: acq_data.join("MSProfile.bin"),
+            instrument,
+            start_timestamp,
         })
     }
 }
 
 impl SpectrumSource for Reader {
     fn run_metadata(&self) -> RunMetadata {
-        let is_qtof = self.msscan.stride >= 220;
-        let instrument_name = if is_qtof {
-            "Agilent Q-TOF"
-        } else {
-            "Agilent QQQ"
-        };
-
         RunMetadata {
             source_file_name: self.bundle_name.clone(),
             source_file_format: CvTerm::new("MS:1002846", "Agilent MassHunter format"),
             native_id_format: CvTerm::new("MS:1002848", "Agilent MassHunter nativeID format"),
-            instrument: CvTerm::new("MS:1000461", instrument_name), // generic agilent node
+            instrument: self.instrument.clone(),
             software_name: "openaraw".to_string(),
             software_version: env!("CARGO_PKG_VERSION").to_string(),
-            start_timestamp: None,
+            start_timestamp: self.start_timestamp.clone(),
             mobility_array_kind: None,
         }
     }
