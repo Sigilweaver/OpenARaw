@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `run_metadata()`'s `instrument` field is now resolved from the mass
+  spectrometer's `<ModelNumber>` in `AcqData/Devices.xml` (mapped to a
+  specific PSI-MS CV term where one exists, e.g. `MS:1002784` "6550A
+  iFunnel Q-TOF LC/MS", falling back to the generic `MS:1000490`
+  "Agilent instrument model" otherwise), instead of guessing "Q-TOF" vs
+  "QQQ" from whether `MSScan.bin`'s record stride happened to be `>=
+  220`. The stride-based guess remains as a fallback for the rare bundle
+  missing `Devices.xml`.
+- `start_timestamp` is now parsed from `<AcquiredTime>` in
+  `AcqData/Contents.xml` instead of being hardcoded to `None`.
+
 ## [0.1.1] - 2026-07-11
 
 ### Fixed
