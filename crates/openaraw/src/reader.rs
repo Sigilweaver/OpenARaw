@@ -202,6 +202,7 @@ impl SpectrumSource for Reader {
                 high_mz: rec.max_x,
                 ion_injection_time_ms: None,
                 inv_mobility: None,
+                faims_cv: None, // Agilent instruments have no FAIMS interface.
                 precursor: if rec.ms_level >= 2 {
                     let mut precursor_native_id = None;
                     let mut target_mz = None;

@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-15
+
 ### Fixed
 
+- Bumped `openmassspec-core` to 1.2.0 and added the `SpectrumRecord.faims_cv`
+  field it requires, fixing a build break: 1.2.0 added that field as
+  required, and `Reader::iter_spectra` constructed the struct literal
+  without it. Always `None` - Agilent instruments have no FAIMS interface.
 - `run_metadata()`'s `instrument` field is now resolved from the mass
   spectrometer's `<ModelNumber>` in `AcqData/Devices.xml` (mapped to a
   specific PSI-MS CV term where one exists, e.g. `MS:1002784` "6550A
