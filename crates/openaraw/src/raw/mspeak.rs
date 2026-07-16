@@ -53,3 +53,60 @@ pub fn decode_peak_block(bytes: &[u8], params: &SpectrumParams) -> crate::Result
 
     Ok(PeakSpectrum { mz, intensity })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn params(format_id: u32, point_count: u32) -> SpectrumParams {
+        SpectrumParams {
+            format_id,
+            offset: 0,
+            byte_count: 0,
+            point_count,
+            uncompressed_byte_count: None,
+        }
+    }
+
+    #[test]
+    fn decodes_qqq_mrm_array_of_structures() {
+        // format_id 3: [mz: f64, intensity: f32] per point, 12 bytes/point.
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&100.5f64.to_le_bytes());
+        bytes.extend_from_slice(&10.0f32.to_le_bytes());
+        bytes.extend_from_slice(&200.25f64.to_le_bytes());
+        bytes.extend_from_slice(&20.0f32.to_le_bytes());
+
+        let spectrum = decode_peak_block(&bytes, &params(3, 2)).unwrap();
+        assert_eq!(spectrum.mz, vec![100.5, 200.25]);
+        assert_eq!(spectrum.intensity, vec![10.0, 20.0]);
+    }
+
+    #[test]
+    fn decodes_qtof_structure_of_arrays() {
+        // format_id 2: N * (mz: f64, scaled by 100), then N * (intensity: f32).
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&10050.0f64.to_le_bytes()); // -> 100.5
+        bytes.extend_from_slice(&20025.0f64.to_le_bytes()); // -> 200.25
+        bytes.extend_from_slice(&10.0f32.to_le_bytes());
+        bytes.extend_from_slice(&20.0f32.to_le_bytes());
+
+        let spectrum = decode_peak_block(&bytes, &params(2, 2)).unwrap();
+        assert_eq!(spectrum.mz, vec![100.5, 200.25]);
+        assert_eq!(spectrum.intensity, vec![10.0, 20.0]);
+    }
+
+    #[test]
+    fn unknown_format_id_is_an_error() {
+        let err = decode_peak_block(&[], &params(99, 0)).unwrap_err();
+        assert!(err.to_string().contains("Unknown peak format ID"));
+    }
+
+    #[test]
+    fn truncated_block_is_an_error() {
+        // Claims 2 points (24 bytes needed) but only provides 4.
+        let bytes = vec![0u8; 4];
+        let err = decode_peak_block(&bytes, &params(3, 2)).unwrap_err();
+        assert!(err.to_string().contains("Truncated MSPeak.bin block"));
+    }
+}

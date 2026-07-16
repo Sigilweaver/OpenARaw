@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Testing
+
+- Added synthetic byte-slice unit tests for the block decoders (`lzf`,
+  `msscan`, `mspeak`, `msprofile`), which previously had no coverage on
+  CI (the only tests were corpus-gated and skip when the corpus is
+  absent). Covers LZF literal/back-reference decoding and its malformed-
+  input error paths, MSScan.bin stride detection across all five
+  candidate strides plus a regression test for the short-payload bounds
+  guard (0.1.1), and minimal MSPeak/MSProfile record decoding. `MSScan`
+  gained a `from_bytes` associated function (`from_path` now delegates
+  to it) so the parser can be exercised without touching the filesystem.
+  Fixes #2. (@Nabejo)
+
 ## [0.1.2] - 2026-07-15
 
 ### Fixed
