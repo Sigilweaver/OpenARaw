@@ -2,8 +2,22 @@
 //!
 //! MSProfile.bin uses standard LZF compression without frame headers.
 
+/// Upper bound on a single decompressed profile block. `UncompressedByteCount`
+/// is a file-controlled `u32` (`PointCount * 4 + 16` for a real block, see
+/// `docs/format/04-msprofile.md`); a real Q-TOF profile spectrum tops out at
+/// a few MB, so 512 MiB is generous headroom while still ruling out a
+/// crafted header forcing a multi-GB allocation from a tiny compressed input.
+const MAX_DECOMPRESSED_LEN: usize = 512 * 1024 * 1024;
+
 /// Decompress raw LZF data.
 pub fn decompress(input: &[u8], expected_len: usize) -> crate::Result<Vec<u8>> {
+    if expected_len > MAX_DECOMPRESSED_LEN {
+        return Err(crate::Error::Parse(format!(
+            "LZF: expected decompressed length {} exceeds cap of {}",
+            expected_len, MAX_DECOMPRESSED_LEN
+        )));
+    }
+
     let mut out = vec![0u8; expected_len];
     let mut iidx = 0;
     let mut oidx = 0;
@@ -171,5 +185,15 @@ mod tests {
         assert!(err
             .to_string()
             .contains("decompressed length 1 != expected 5"));
+    }
+
+    /// Regression test: `expected_len` is `UncompressedByteCount`, a
+    /// file-controlled `u32`. Before the cap, this allocated `expected_len`
+    /// bytes unconditionally, so a crafted header could force a multi-GB
+    /// allocation from a tiny compressed input.
+    #[test]
+    fn rejects_expected_len_over_cap() {
+        let err = decompress(&[], MAX_DECOMPRESSED_LEN + 1).unwrap_err();
+        assert!(err.to_string().contains("exceeds cap"));
     }
 }
