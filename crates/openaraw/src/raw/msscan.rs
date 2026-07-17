@@ -39,6 +39,13 @@ pub struct MSScan {
 impl MSScan {
     pub fn from_path(path: &Path) -> crate::Result<Self> {
         let bytes = std::fs::read(path)?;
+        Self::from_bytes(&bytes)
+    }
+
+    /// Parse an already-loaded MSScan.bin buffer. Split out from
+    /// `from_path` so tests can exercise the parser (including malformed
+    /// synthetic buffers) without touching the filesystem.
+    pub fn from_bytes(bytes: &[u8]) -> crate::Result<Self> {
         if bytes.len() < 92 {
             return Err(crate::Error::Parse(
                 "MSScan.bin too small for header".into(),
@@ -212,5 +219,96 @@ impl MSScan {
             stride,
             records,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const GLOBAL_HEADER_SIZE: usize = 92;
+
+    fn header() -> Vec<u8> {
+        let mut h = vec![0u8; GLOBAL_HEADER_SIZE];
+        LittleEndian::write_u32(&mut h[0..4], 257); // magic
+        LittleEndian::write_u32(&mut h[88..92], GLOBAL_HEADER_SIZE as u32);
+        h
+    }
+
+    /// A single synthetic record of `stride` bytes with just the fields the
+    /// stride-probe and top-level parse look at: scan_id, retention_time,
+    /// ms_level. Everything else (block offsets, min_x/max_x, ...) is left
+    /// zeroed, which the parser reads as format_id 0 ("ignore") / 0.0.
+    fn record(stride: usize, scan_id: u32, ms_level: u16) -> Vec<u8> {
+        let mut r = vec![0u8; stride];
+        LittleEndian::write_u32(&mut r[0..4], scan_id);
+        LittleEndian::write_f64(&mut r[12..20], 0.0);
+        LittleEndian::write_u16(&mut r[20..22], ms_level);
+        r
+    }
+
+    fn msscan_bytes(stride: u32, records: &[(u32, u16)]) -> Vec<u8> {
+        let mut bytes = header();
+        for &(scan_id, ms_level) in records {
+            bytes.extend(record(stride as usize, scan_id, ms_level));
+        }
+        bytes
+    }
+
+    #[test]
+    fn detects_each_candidate_stride() {
+        for &stride in &[284u32, 220, 216, 196, 186] {
+            let bytes = msscan_bytes(stride, &[(1, 1), (2, 1)]);
+            let scan = MSScan::from_bytes(&bytes)
+                .unwrap_or_else(|e| panic!("stride {stride} failed to parse: {e}"));
+            assert_eq!(scan.stride, stride, "wrong stride detected for {stride}");
+            assert_eq!(scan.records.len(), 2);
+            assert_eq!(scan.records[0].scan_id, 1);
+            assert_eq!(scan.records[1].scan_id, 2);
+        }
+    }
+
+    #[test]
+    fn detects_stride_from_single_exact_record() {
+        // With exactly one record, the probe short-circuits on
+        // payload_len == stride without needing the second-record
+        // scan_id/ms_level heuristic.
+        let bytes = msscan_bytes(186, &[(1, 1)]);
+        let scan = MSScan::from_bytes(&bytes).unwrap();
+        assert_eq!(scan.stride, 186);
+        assert_eq!(scan.records.len(), 1);
+    }
+
+    /// Regression test for the bounds guard fixed alongside the stride
+    /// probe: a payload of 1..=3 bytes is too short for the 4-byte ScanID
+    /// the probe reads, and must produce a parse error rather than
+    /// panicking on an out-of-bounds slice.
+    #[test]
+    fn short_payload_does_not_panic() {
+        let mut bytes = header();
+        bytes.extend([0u8, 0u8]); // 2-byte payload: shorter than one ScanID
+        let result = MSScan::from_bytes(&bytes);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn empty_payload_is_a_parse_error_not_a_panic() {
+        let bytes = header();
+        let result = MSScan::from_bytes(&bytes);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn too_small_for_header_is_a_parse_error() {
+        let result = MSScan::from_bytes(&[0u8; 10]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn bad_magic_is_a_parse_error() {
+        let mut bytes = header();
+        LittleEndian::write_u32(&mut bytes[0..4], 999);
+        let result = MSScan::from_bytes(&bytes);
+        assert!(result.is_err());
     }
 }

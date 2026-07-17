@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- `read_bytes` (used to load `MSProfile.bin`/`MSPeak.bin` blocks by the
+  `SpectrumOffset`/`ByteCount` a `MSScan.bin` record supplies) now checks
+  the requested length against the actual remaining file size before
+  allocating, instead of allocating first. A crafted `ByteCount` could
+  previously force an allocation up to ~4 GB regardless of the real file
+  size.
+- `lzf::decompress` now caps its `UncompressedByteCount`-driven
+  allocation at 512 MiB before allocating, for the same reason: that
+  field is a file-controlled `u32` with no independent bound (unlike
+  `ByteCount`, decompressed size isn't checkable against the file size
+  directly). 512 MiB is well beyond any real Q-TOF profile spectrum.
+  Fixes #1. (@Nabejo)
+
+### Testing
+
+- Added synthetic byte-slice unit tests for the block decoders (`lzf`,
+  `msscan`, `mspeak`, `msprofile`), which previously had no coverage on
+  CI (the only tests were corpus-gated and skip when the corpus is
+  absent). Covers LZF literal/back-reference decoding and its malformed-
+  input error paths (including the new allocation cap above), MSScan.bin
+  stride detection across all five candidate strides plus a regression
+  test for the short-payload bounds guard (0.1.1), and minimal
+  MSPeak/MSProfile record decoding. `MSScan` gained a `from_bytes`
+  associated function (`from_path` now delegates to it) so the parser
+  can be exercised without touching the filesystem.
+  Fixes #2. (@Nabejo)
+
 ## [0.1.2] - 2026-07-15
 
 ### Fixed
