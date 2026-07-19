@@ -1,5 +1,9 @@
 # OpenARaw
 
+[![CI](https://github.com/Sigilweaver/OpenARaw/actions/workflows/ci.yml/badge.svg)](https://github.com/Sigilweaver/OpenARaw/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/openaraw.svg)](https://crates.io/crates/openaraw)
+[![PyPI](https://img.shields.io/pypi/v/openaraw.svg)](https://pypi.org/project/openaraw/)
+[![docs.rs](https://img.shields.io/docsrs/openaraw)](https://docs.rs/openaraw)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Rust MSRV](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
@@ -13,6 +17,8 @@ Rust and Python reader for Agilent MassHunter `.d` mass spectrometry data
 directories, clean-room reverse-engineered with no Agilent SDK or
 software dependency. Covers the modern `AcqData` MassHunter shape across
 Q-TOF (profile and centroid) and QQQ (MRM) acquisitions.
+
+Documentation: [sigilweaver.app/openaraw/docs](https://sigilweaver.app/openaraw/docs)
 
 ## Status
 
