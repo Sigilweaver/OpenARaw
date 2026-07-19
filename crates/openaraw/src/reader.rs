@@ -1,7 +1,8 @@
 //! High-level reader for an Agilent `.d` bundle directory.
 
 use openmassspec_core::{
-    Analyzer, CvTerm, PrecursorInfo, RunMetadata, ScanMode, SpectrumRecord, SpectrumSource,
+    Analyzer, ChromatogramRecord, CvTerm, PrecursorInfo, RunMetadata, ScanMode, SpectrumRecord,
+    SpectrumSource,
 };
 use std::path::{Path, PathBuf};
 
@@ -70,6 +71,78 @@ fn resolve_instrument(acq_data: &Path, msscan: &MSScan) -> CvTerm {
         "Agilent QQQ"
     };
     CvTerm::new("MS:1000461", instrument_name) // generic agilent node; Devices.xml unavailable
+}
+
+/// Build the run-level summary chromatograms (TIC and BPC) from an already
+/// decoded spectrum stream.
+///
+/// This is a pure aggregation of data OpenARaw already decodes - it does no
+/// additional binary parsing. Neither `MSScan.bin` nor the payload files
+/// expose a confirmed per-scan total-ion-current or base-peak field
+/// (`docs/format/01-msscan.md` only tentatively labels the stride-284
+/// offset-36 value as "TIC or related intensity metric", so reading it would
+/// be a guess), so both traces are derived from the decoded intensity arrays
+/// the same way the mzML writer would fill a spectrum's missing summary
+/// values: TIC is the sum of intensities in a scan and the base peak is the
+/// most intense point, via [`SpectrumRecord::effective_tic`] and
+/// [`SpectrumRecord::effective_base_peak`]. Building the traces this way keeps
+/// them self-consistent with the spectra actually emitted for the run.
+///
+/// Only MS1 scans contribute: a survey (MS1) trace is what the "total ion
+/// current chromatogram" / "basepeak chromatogram" CV terms describe, and
+/// mixing interleaved MS2 scans in would produce a non-chromatographic,
+/// RT-duplicated trace. Runs with no MS1 scans (e.g. QQQ MRM acquisitions,
+/// which are all MS2) therefore yield no summary chromatograms rather than a
+/// misleading one.
+///
+/// Per-transition SRM/MRM chromatograms are intentionally not produced:
+/// OpenARaw decodes only an opaque `mrm_channel_id`, not the Q1/Q3 isolation
+/// windows an SRM chromatogram needs, and recovering those would be new
+/// binary parsing rather than wiring up already-decoded data.
+///
+/// `SpectrumRecord::retention_time_sec` is already in seconds, matching
+/// `ChromatogramRecord::time_sec`; it is only narrowed to `f32` here.
+fn summary_chromatograms<I>(spectra: I) -> Vec<ChromatogramRecord>
+where
+    I: Iterator<Item = SpectrumRecord>,
+{
+    let mut time_sec: Vec<f32> = Vec::new();
+    let mut tic: Vec<f32> = Vec::new();
+    let mut bpc: Vec<f32> = Vec::new();
+
+    for rec in spectra {
+        if rec.ms_level != 1 {
+            continue;
+        }
+        time_sec.push(rec.retention_time_sec as f32);
+        tic.push(rec.effective_tic() as f32);
+        bpc.push(rec.effective_base_peak().map_or(0.0, |(_, i)| i as f32));
+    }
+
+    if time_sec.is_empty() {
+        return Vec::new();
+    }
+
+    vec![
+        ChromatogramRecord {
+            index: 0,
+            id: "TIC".to_string(),
+            chromatogram_type: Some(CvTerm::new("MS:1000235", "total ion current chromatogram")),
+            precursor_mz: None,
+            product_mz: None,
+            time_sec: time_sec.clone(),
+            intensity: tic,
+        },
+        ChromatogramRecord {
+            index: 1,
+            id: "BPC".to_string(),
+            chromatogram_type: Some(CvTerm::new("MS:1000628", "basepeak chromatogram")),
+            precursor_mz: None,
+            product_mz: None,
+            time_sec,
+            intensity: bpc,
+        },
+    ]
 }
 
 impl Reader {
@@ -234,5 +307,119 @@ impl SpectrumSource for Reader {
         });
 
         Box::new(iter)
+    }
+
+    /// Emit the run's summary chromatograms (TIC and BPC), derived from the
+    /// decoded MS1 spectra. See [`summary_chromatograms`] for how the traces
+    /// are built and why SRM chromatograms are not produced.
+    fn iter_chromatograms<'a>(&'a mut self) -> Box<dyn Iterator<Item = ChromatogramRecord> + 'a> {
+        let records = summary_chromatograms(self.iter_spectra());
+        Box::new(records.into_iter())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Minimal MS-level spectrum carrying just the fields
+    /// [`summary_chromatograms`] reads: level, retention time, and the
+    /// intensity/mz arrays it aggregates.
+    fn spectrum(
+        index: usize,
+        ms_level: u32,
+        rt_sec: f64,
+        mz: Vec<f64>,
+        intensity: Vec<f32>,
+    ) -> SpectrumRecord {
+        SpectrumRecord {
+            index,
+            scan_number: index as u32 + 1,
+            native_id: format!("scanId={}", index + 1),
+            ms_level,
+            polarity: None,
+            scan_mode: None,
+            analyzer: None,
+            filter: None,
+            retention_time_sec: rt_sec,
+            total_ion_current: None,
+            base_peak_mz: None,
+            base_peak_intensity: None,
+            low_mz: None,
+            high_mz: None,
+            ion_injection_time_ms: None,
+            inv_mobility: None,
+            faims_cv: None,
+            precursor: None,
+            mz,
+            intensity,
+            inv_mobility_per_peak: None,
+        }
+    }
+
+    #[test]
+    fn summary_chromatograms_emit_tic_and_bpc_over_ms1_scans_only() {
+        // Two MS1 survey scans with an MS2 scan interleaved. The MS2 scan,
+        // and its (here deliberately huge) intensities, must not appear in
+        // either trace.
+        let spectra = vec![
+            spectrum(0, 1, 60.0, vec![100.0, 200.0], vec![10.0, 30.0]),
+            spectrum(1, 2, 60.5, vec![150.0], vec![9999.0]),
+            spectrum(
+                2,
+                1,
+                120.0,
+                vec![100.0, 200.0, 300.0],
+                vec![5.0, 50.0, 20.0],
+            ),
+        ];
+
+        let chroms = summary_chromatograms(spectra.into_iter());
+        assert_eq!(chroms.len(), 2, "expected exactly a TIC and a BPC trace");
+
+        let tic = &chroms[0];
+        assert_eq!(tic.id, "TIC");
+        assert_eq!(tic.index, 0);
+        assert_eq!(
+            tic.chromatogram_type.as_ref().unwrap().accession,
+            "MS:1000235"
+        );
+        // MS1 retention times only, passed through unchanged (already seconds).
+        assert_eq!(tic.time_sec, vec![60.0, 120.0]);
+        // TIC = sum of each MS1 scan's intensities.
+        assert_eq!(tic.intensity, vec![40.0, 75.0]);
+
+        let bpc = &chroms[1];
+        assert_eq!(bpc.id, "BPC");
+        assert_eq!(bpc.index, 1);
+        assert_eq!(
+            bpc.chromatogram_type.as_ref().unwrap().accession,
+            "MS:1000628"
+        );
+        assert_eq!(bpc.time_sec, vec![60.0, 120.0]);
+        // BPC = the most intense point in each MS1 scan.
+        assert_eq!(bpc.intensity, vec![30.0, 50.0]);
+    }
+
+    #[test]
+    fn summary_chromatograms_empty_when_no_ms1_scans() {
+        // QQQ MRM acquisitions have no MS1 scans, so no survey trace can be
+        // built - we emit nothing rather than an empty-typed chromatogram.
+        let spectra = vec![
+            spectrum(0, 2, 60.0, vec![150.0], vec![100.0]),
+            spectrum(1, 2, 60.0, vec![250.0], vec![200.0]),
+        ];
+        assert!(summary_chromatograms(spectra.into_iter()).is_empty());
+    }
+
+    #[test]
+    fn summary_chromatograms_handle_empty_spectra() {
+        // A decoded-but-empty MS1 scan contributes a zero point to both
+        // traces rather than being dropped, keeping the time axes aligned.
+        let spectra = vec![spectrum(0, 1, 30.0, vec![], vec![])];
+        let chroms = summary_chromatograms(spectra.into_iter());
+        assert_eq!(chroms.len(), 2);
+        assert_eq!(chroms[0].intensity, vec![0.0]);
+        assert_eq!(chroms[1].intensity, vec![0.0]);
     }
 }

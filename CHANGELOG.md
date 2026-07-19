@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Reader::iter_chromatograms` (Sigilweaver/OpenARaw#17): overrides the
+  `SpectrumSource` trait default so TIC and base-peak chromatograms reach
+  mzML output through OpenMassSpecCore's `<chromatogramList>` writer. Both
+  traces are derived from already-decoded MS1 spectra - TIC from the summed
+  scan intensities (`MS:1000235` "total ion current chromatogram") and BPC
+  from each scan's most intense point (`MS:1000628` "basepeak chromatogram")
+  - so they stay self-consistent with the emitted spectra and require no new
+  binary parsing. Runs with no MS1 scans (e.g. QQQ MRM) emit no summary
+  chromatograms. SRM/MRM transition chromatograms are not produced because
+  the Q1/Q3 isolation windows they need are not decoded (only an opaque
+  `mrm_channel_id` is). (@Nabejo)
+
 ### Security
 
 - `read_bytes` (used to load `MSProfile.bin`/`MSPeak.bin` blocks by the
