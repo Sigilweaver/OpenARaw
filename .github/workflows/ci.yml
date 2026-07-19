@@ -2,7 +2,7 @@
 #
 # Jobs:
 #   build - cargo fmt --check, cargo clippy -D warnings, cargo test
-#           (Linux + macOS via WarpBuild)
+#           (Linux + macOS + Windows, mirroring publish.yml's wheel matrix)
 #
 # There is no corpus-download validation job yet (unlike OpenTFRaw's
 # single-file .raw fixture): the corpus this reader validates against is
@@ -33,6 +33,7 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
+          - windows-latest
     steps:
       - uses: actions/checkout@v4
 
