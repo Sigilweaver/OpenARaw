@@ -14,19 +14,11 @@
 > [OpenTimsTDF](https://github.com/Sigilweaver/OpenTimsTDF) (Bruker).
 
 Rust and Python reader for Agilent MassHunter `.d` mass spectrometry data
-directories, clean-room reverse-engineered with no Agilent SDK or
-software dependency. Covers the modern `AcqData` MassHunter shape across
-Q-TOF (profile and centroid) and QQQ (MRM) acquisitions.
+directories, with no Agilent SDK or software dependency. Covers the
+modern `AcqData` MassHunter shape across Q-TOF (profile and centroid)
+and QQQ (MRM) acquisitions.
 
 Documentation: [sigilweaver.app/openaraw/docs](https://sigilweaver.app/openaraw/docs)
-
-## Status
-
-Published on crates.io (`openaraw`) and PyPI (`openaraw`). The reader is
-validated against the full corpus (332 of 338 real-world PRIDE `.d`
-datasets pass conformance checks end to end; the remaining 6 are
-malformed source uploads, see
-[docs/format/06-known-limitations.md](docs/format/06-known-limitations.md)).
 
 ## Install
 
@@ -81,6 +73,9 @@ reader = openaraw.RawReader("sample.d")
 spectrum = reader.read_spectrum(0)
 print(spectrum.ms_level, spectrum.retention_time_sec, len(spectrum.mz))
 ```
+
+See the [docs site](https://sigilweaver.app/openaraw/docs) for the full
+guide, format specification, and API reference.
 
 ## License
 
