@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-20
+
 ### Security
 
 - `read_bytes` (used to load `MSProfile.bin`/`MSPeak.bin` blocks by the
