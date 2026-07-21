@@ -7,11 +7,8 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Rust MSRV](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
-> Part of the [OpenMassSpec](https://sigilweaver.app/openmassspec/docs/)
-> stack for mass spectrometry raw-file access. Sibling readers:
-> [OpenTFRaw](https://github.com/Sigilweaver/OpenTFRaw) (Thermo),
-> [OpenWRaw](https://github.com/Sigilweaver/OpenWRaw) (Waters),
-> [OpenTimsTDF](https://github.com/Sigilweaver/OpenTimsTDF) (Bruker).
+> Part of the [OpenMassSpec](https://github.com/Sigilweaver/OpenMassSpec)
+> stack for mass spectrometry raw-file access.
 
 Rust and Python reader for Agilent MassHunter `.d` mass spectrometry data
 directories, with no Agilent SDK or software dependency. Covers the
