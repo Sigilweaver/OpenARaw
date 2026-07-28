@@ -6,7 +6,7 @@ use openmassspec_core::{
 };
 use std::path::{Path, PathBuf};
 
-use crate::raw::metadata::{parse_acquired_time, parse_devices_xml};
+use crate::raw::metadata::{parse_acquired_time, parse_devices_xml, DeviceInfo};
 use crate::raw::mspeak::{decode_peak_block, PeakSpectrum};
 use crate::raw::msprofile::{decode_profile_block, ProfileSpectrum};
 use crate::raw::msscan::MSScan;
@@ -23,6 +23,7 @@ pub struct Reader {
     peak_path: PathBuf,
     profile_path: PathBuf,
     instrument: CvTerm,
+    analyzer: Analyzer,
     start_timestamp: Option<String>,
 }
 
@@ -59,8 +60,8 @@ fn instrument_cv_for_model(model: &str) -> CvTerm {
 /// unparseable, or lacks the fields we need - this is a real condition
 /// in the wild (see `docs/format/06-known-limitations.md`), not just a
 /// defensive fallback.
-fn resolve_instrument(acq_data: &Path, msscan: &MSScan) -> CvTerm {
-    if let Some(device) = parse_devices_xml(&acq_data.join("Devices.xml")) {
+fn resolve_instrument(device: Option<&DeviceInfo>, msscan: &MSScan) -> CvTerm {
+    if let Some(device) = device {
         return instrument_cv_for_model(&device.model);
     }
 
@@ -71,6 +72,35 @@ fn resolve_instrument(acq_data: &Path, msscan: &MSScan) -> CvTerm {
         "Agilent QQQ"
     };
     CvTerm::new("MS:1000461", instrument_name) // generic agilent node; Devices.xml unavailable
+}
+
+/// Resolve the mass analyzer type, preferring `Devices.xml`'s `<Name>`
+/// field over the legacy record-stride guess.
+///
+/// The mass spectrometer `<Device>`'s `<Name>` is confirmed (across the
+/// 330-bundle validation corpus, see `CORPUS.md` and the module docs on
+/// [`parse_devices_xml`]) to be exactly `"QTOF"` (`Type=6`, Q-TOF
+/// instruments) or `"TandemQuadrupole"` (`Type=5`, QQQ instruments) - a
+/// direct statement of the analyzer family from the acquisition's own
+/// metadata, rather than a guess inferred from `MSScan.bin`'s record
+/// size. Falls back to the stride-based guess (`stride >= 220` => TOFMS,
+/// matching the wide Q-TOF record layout; narrower => TQMS) when
+/// `Devices.xml` is missing, unparseable, or names a device outside
+/// those two known values - the same real-world condition
+/// `resolve_instrument` above falls back for (see
+/// `docs/format/06-known-limitations.md`).
+fn resolve_analyzer(device: Option<&DeviceInfo>, msscan: &MSScan) -> Analyzer {
+    match device.map(|d| d.name.as_str()) {
+        Some(name) if name.eq_ignore_ascii_case("QTOF") => return Analyzer::TOFMS,
+        Some(name) if name.eq_ignore_ascii_case("TandemQuadrupole") => return Analyzer::TQMS,
+        _ => {}
+    }
+
+    if msscan.stride >= 220 {
+        Analyzer::TOFMS
+    } else {
+        Analyzer::TQMS
+    }
 }
 
 /// Build the run-level summary chromatograms (TIC and BPC) from an already
@@ -162,7 +192,13 @@ impl Reader {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "bundle.d".into());
 
-        let instrument = resolve_instrument(&acq_data, &msscan);
+        // Parsed once and shared: both the run-level instrument CV term and
+        // the per-spectrum analyzer type are resolved from the same
+        // `Devices.xml` device entry (see `resolve_instrument` and
+        // `resolve_analyzer`).
+        let device = parse_devices_xml(&acq_data.join("Devices.xml"));
+        let instrument = resolve_instrument(device.as_ref(), &msscan);
+        let analyzer = resolve_analyzer(device.as_ref(), &msscan);
         let start_timestamp = parse_acquired_time(&acq_data.join("Contents.xml"));
 
         Ok(Reader {
@@ -172,6 +208,7 @@ impl Reader {
             peak_path: acq_data.join("MSPeak.bin"),
             profile_path: acq_data.join("MSProfile.bin"),
             instrument,
+            analyzer,
             start_timestamp,
         })
     }
@@ -202,6 +239,11 @@ impl SpectrumSource for Reader {
 
     fn iter_spectra<'a>(&'a mut self) -> Box<dyn Iterator<Item = SpectrumRecord> + 'a> {
         let mut index = 0;
+        // Resolved once in `Reader::open` from `Devices.xml` (falling back to
+        // the record-stride guess only when that's unavailable) - the same
+        // analyzer type for every scan in the run, so there's no need to
+        // re-derive it per spectrum. See `resolve_analyzer`.
+        let analyzer = self.analyzer;
 
         let iter = self.msscan.records.clone().into_iter().map(move |rec| {
             let scan_idx = index;
@@ -249,14 +291,6 @@ impl SpectrumSource for Reader {
 
             // Create native ID
             let native_id = format!("scanId={}", rec.scan_id);
-
-            // Setup Analyzer type
-            let is_qtof = self.msscan.stride >= 220;
-            let analyzer = if is_qtof {
-                Analyzer::TOFMS
-            } else {
-                Analyzer::TQMS
-            };
 
             SpectrumRecord {
                 index: scan_idx,
@@ -332,6 +366,66 @@ impl SpectrumSource for Reader {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Minimal `MSScan` carrying just the field [`resolve_analyzer`] and
+    /// [`resolve_instrument`] read: the record stride used for their
+    /// Devices.xml-unavailable fallback.
+    fn msscan_with_stride(stride: u32) -> MSScan {
+        MSScan {
+            global_header_size: 0,
+            stride,
+            records: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn resolve_analyzer_prefers_devices_xml_qtof_over_stride() {
+        let device = DeviceInfo {
+            name: "QTOF".to_string(),
+            model: "G6550A".to_string(),
+        };
+        // Stride says QQQ, but a real Devices.xml device entry must win.
+        let msscan = msscan_with_stride(150);
+        assert_eq!(resolve_analyzer(Some(&device), &msscan), Analyzer::TOFMS);
+    }
+
+    #[test]
+    fn resolve_analyzer_prefers_devices_xml_tandem_quadrupole_over_stride() {
+        let device = DeviceInfo {
+            name: "TandemQuadrupole".to_string(),
+            model: "G6410A".to_string(),
+        };
+        // Stride says Q-TOF, but a real Devices.xml device entry must win.
+        let msscan = msscan_with_stride(284);
+        assert_eq!(resolve_analyzer(Some(&device), &msscan), Analyzer::TQMS);
+    }
+
+    #[test]
+    fn resolve_analyzer_falls_back_to_stride_when_devices_xml_missing() {
+        assert_eq!(
+            resolve_analyzer(None, &msscan_with_stride(220)),
+            Analyzer::TOFMS
+        );
+        assert_eq!(
+            resolve_analyzer(None, &msscan_with_stride(150)),
+            Analyzer::TQMS
+        );
+    }
+
+    #[test]
+    fn resolve_analyzer_falls_back_to_stride_for_unrecognized_device_name() {
+        // A device name outside the two seen across the validation corpus
+        // (see `resolve_analyzer` docs) is treated the same as a missing
+        // Devices.xml, rather than guessed at.
+        let device = DeviceInfo {
+            name: "SomeFutureInstrument".to_string(),
+            model: "G9999A".to_string(),
+        };
+        assert_eq!(
+            resolve_analyzer(Some(&device), &msscan_with_stride(220)),
+            Analyzer::TOFMS
+        );
+    }
 
     /// Minimal MS-level spectrum carrying just the fields
     /// [`summary_chromatograms`] reads: level, retention time, and the

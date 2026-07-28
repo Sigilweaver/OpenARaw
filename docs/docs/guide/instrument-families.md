@@ -39,10 +39,16 @@ the run.
 
 ## How the reader tells them apart
 
-The reader does not read the instrument model string. It infers the
-family from `MSScan.bin`'s record stride (`>= 220` bytes indicates Q-TOF;
-QQQ records use a shorter 186- or 196-byte stride) - see
-[MSScan.bin](../format/msscan) for the full stride table. This heuristic
-has held across every corpus file tested; if you encounter a `.d`
-directory it misclassifies, please
-[open an issue](https://github.com/Sigilweaver/OpenARaw/issues).
+The reader resolves the family from `AcqData/Devices.xml`'s mass
+spectrometer `<Device>` entry: `<Name>QTOF</Name>` maps to
+`Analyzer::TOFMS`, `<Name>TandemQuadrupole</Name>` maps to
+`Analyzer::TQMS` - confirmed with zero exceptions across the 330-bundle
+validation corpus (see
+[`docs/format/07-run-metadata.md`](https://github.com/Sigilweaver/OpenARaw/blob/main/docs/format/07-run-metadata.md)
+in the repository). Only when `Devices.xml` is missing, unparseable, or
+names a device outside those two known values does it fall back to the
+legacy heuristic: `MSScan.bin`'s
+record stride (`>= 220` bytes indicates Q-TOF; QQQ records use a shorter
+186- or 196-byte stride) - see [MSScan.bin](../format/msscan) for the full
+stride table. If you encounter a `.d` directory either path misclassifies,
+please [open an issue](https://github.com/Sigilweaver/OpenARaw/issues).

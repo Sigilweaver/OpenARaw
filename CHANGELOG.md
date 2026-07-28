@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `Reader`'s per-spectrum `analyzer` field (TOFMS vs TQMS) was inferred
+  purely from `MSScan.bin`'s record stride (`stride >= 220` => Q-TOF), a
+  heuristic standing in for a real parse. It is now resolved from
+  `Devices.xml`'s `<Name>` field (`"QTOF"`/`"TandemQuadrupole"`, confirmed
+  across the 330-bundle validation corpus) the same way `resolve_instrument`
+  already resolves the run's instrument CV term, falling back to the
+  stride guess only when `Devices.xml` is missing, unparseable, or names a
+  device outside those two known values. `SpectrumRecord::polarity` was
+  also investigated per the issue (whether it's recoverable from a
+  metadata stream such as `Contents.xml` or an acquisition-method file
+  rather than per-scan binary data); the existing investigation in
+  `docs/format/06-known-limitations.md` already covers this ground (both
+  `AcqMethod.xml`'s per-segment `ionPolarity` and
+  `MSPeriodicActuals.bin`'s `ActualID=65` channel were checked against a
+  known mixed-polarity run and found inconclusive/unusable), so it remains
+  documented there as a known limitation rather than left as an open
+  question. Fixes #22. (@Nabejo)
+
 ### Added
 
 - `Reader::iter_chromatograms` (Sigilweaver/OpenARaw#17): overrides the

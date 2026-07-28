@@ -83,6 +83,14 @@ the previous guess that only distinguished "record stride >= 220" (Q-TOF)
 from "record stride < 220" (QQQ) and tagged either case with the same
 generic `MS:1000461` CV term.
 
+The first device's `<Name>` (`QTOF` or `TandemQuadrupole`, per the table
+above) similarly now drives the per-spectrum `SpectrumRecord::analyzer`
+field (see `resolve_analyzer` in `crates/openaraw/src/reader.rs`),
+replacing the same record-stride guess for that field too. Both
+`resolve_instrument` and `resolve_analyzer` fall back to their respective
+stride-based guesses under the same conditions: `Devices.xml` missing,
+unparseable, or naming a first device outside the two known values.
+
 Not every model number in the corpus has a dedicated PSI-MS CV term as
 of `psi-ms.obo`'s current revision - `G6540A`/`G6540B` only have the
 unsuffixed `6540 Q-TOF LC/MS` (`MS:1002789`) at the family level, and
