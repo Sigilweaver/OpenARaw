@@ -188,6 +188,9 @@ impl SpectrumSource for Reader {
             software_name: "openaraw".to_string(),
             software_version: env!("CARGO_PKG_VERSION").to_string(),
             start_timestamp: self.start_timestamp.clone(),
+            // No ion-mobility instrument (Agilent 6560 IM-QTOF) appears in
+            // the validation corpus; see
+            // docs/format/06-known-limitations.md#3-no-ion-mobility--ccs-support-agilent-6560-im-qtof.
             mobility_array_kind: None,
             analyzers: Vec::new(),
         }
@@ -276,6 +279,10 @@ impl SpectrumSource for Reader {
                 low_mz: rec.min_x,
                 high_mz: rec.max_x,
                 ion_injection_time_ms: None,
+                // Not implemented: no ion-mobility (6560 IM-QTOF) acquisition
+                // exists anywhere in the validation corpus to reverse-engineer
+                // a drift-time field against. See
+                // docs/format/06-known-limitations.md#3-no-ion-mobility--ccs-support-agilent-6560-im-qtof.
                 inv_mobility: None,
                 faims_cv: None, // Agilent instruments have no FAIMS interface.
                 precursor: if rec.ms_level >= 2 {
@@ -304,6 +311,8 @@ impl SpectrumSource for Reader {
                 },
                 mz,
                 intensity,
+                // Same reason as `inv_mobility` above: no per-peak
+                // drift-time data exists in the corpus to decode.
                 inv_mobility_per_peak: None,
             }
         });

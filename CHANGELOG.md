@@ -32,6 +32,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   turned up yet (the smallest known one is ~247 MB zipped - see
   CORPUS.md). Fixes #20. (@Nabejo)
 
+### Documentation
+
+- Updates documentation for Sigilweaver/OpenARaw#21: documented why
+  `SpectrumRecord::inv_mobility`, `SpectrumRecord::inv_mobility_per_peak`,
+  and `RunMetadata::mobility_array_kind` are always `None`. Unlike the
+  polarity/`selected_mz` gaps
+  above, this isn't a field that was searched for and not found - no
+  ion-mobility acquisition (e.g. from an Agilent 6560 IM-QTOF) exists
+  anywhere in the 338-bundle PRIDE validation corpus to reverse-engineer
+  a drift-time layout against in the first place. Implementing this
+  without a real sample to check against would mean guessing at a file
+  name and record layout, which the project's clean-room policy
+  prohibits. See `docs/format/06-known-limitations.md` for the open
+  questions (record layout vs. separate frame file, CCS vs. raw drift
+  time) to resolve once a real 6560 bundle is available. (@Nabejo)
+
 ## [0.1.5] - 2026-07-25
 
 ### Fixed
