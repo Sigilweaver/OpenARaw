@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Adapted `RunMetadata` construction to `openmassspec-core` 1.4.0's new
+  `acquisition_software_name`/`acquisition_software_version` fields
+  (defaulted to `None`; nothing in `Devices.xml` or `Contents.xml` is
+  currently parsed into a reusable acquisition-software string - see
+  `docs/format/01-msscan.md`'s `AcqSoftwareVersion` note - so wiring up a
+  real value is left as future work rather than done here). Closes #26.
 - `Reader`'s per-spectrum `analyzer` field (TOFMS vs TQMS) was inferred
   purely from `MSScan.bin`'s record stride (`stride >= 220` => Q-TOF), a
   heuristic standing in for a real parse. It is now resolved from
