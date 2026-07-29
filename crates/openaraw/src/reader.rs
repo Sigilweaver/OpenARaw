@@ -224,6 +224,15 @@ impl SpectrumSource for Reader {
             instrument_serial_number: None,
             software_name: "openaraw".to_string(),
             software_version: env!("CARGO_PKG_VERSION").to_string(),
+            // Not currently parsed: `Contents.xml`'s `AcqSoftwareVersion`
+            // element exists in the corpus (see
+            // docs/format/01-msscan.md) but so far has only been used as
+            // corroborating evidence for instrument-family identification,
+            // not extracted into a reusable field. Wiring it up as a real
+            // acquisition-software string is future work, not part of this
+            // minimal core-1.4.0 adaptation.
+            acquisition_software_name: None,
+            acquisition_software_version: None,
             start_timestamp: self.start_timestamp.clone(),
             // No ion-mobility instrument (Agilent 6560 IM-QTOF) appears in
             // the validation corpus; see
