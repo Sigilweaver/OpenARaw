@@ -3,20 +3,20 @@
 # Jobs:
 #   build - cargo fmt --check, cargo clippy -D warnings, cargo test
 #           (Linux + macOS + Windows, mirroring publish.yml's wheel matrix).
-#           Downloads a small QQQ (MRM) .d.zip fixture from PRIDE and
-#           unzips it ahead of `cargo test` so
-#           crates/openaraw/tests/conformance.rs's test_qqq_conformance
-#           exercises a real decode path instead of skipping - see
-#           Sigilweaver/OpenARaw#20.
+#           Downloads small QQQ (MRM) and QTOF .d.zip fixtures from PRIDE
+#           and unzips them ahead of `cargo test` so
+#           crates/openaraw/tests/conformance.rs's test_qqq_conformance and
+#           test_qtof_conformance exercise real decode paths instead of
+#           skipping - see Sigilweaver/OpenARaw#20 and #28.
 #
 # Unlike OpenTFRaw's single-file .raw fixture, the corpus this reader
 # validates against is whole .d *directories*, which PRIDE does not expose
 # as a single stable download URL the way it does individual Thermo .raw
 # files - PRIDE submitters instead upload a `.d.zip` archive of the whole
 # bundle, so the download step below also unzips it before tests run.
-# No QTOF bundle small enough for a CI download has turned up yet (the
-# smallest known one, PXD004426/20140806_TgAAL.d, is ~247 MB zipped - see
-# CORPUS.md), so test_qtof_conformance still skips in CI until one does.
+# The QTOF fixture (PXD030293/180814-Sample19.d, ~960 KB zipped) replaced
+# the previous ~247 MB QTOF candidate (PXD004426/20140806_TgAAL.d) that was
+# too large for routine CI download - see CORPUS.md.
 
 name: CI
 
@@ -40,8 +40,16 @@ env:
   PRIDE_DZIP_URL: >-
     https://ftp.pride.ebi.ac.uk/pride/data/archive/2022/03/PXD004747/Cdc19_ubp2_AQUA.d.zip
   CORPUS_DZIP_NAME: Cdc19_ubp2_AQUA.d.zip
-  # Keep this directory name in sync with
-  # crates/openaraw/tests/conformance.rs's qqq_fixture() candidates.
+  # Small QTOF (Agilent 6550) bundle (~3 MB unpacked, ~960 KB zipped) from
+  # PRIDE PXD030293, used as the CI corpus-download fixture for
+  # crates/openaraw/tests/conformance.rs's test_qtof_conformance - see
+  # Sigilweaver/OpenARaw#28.
+  PRIDE_DZIP_URL_QTOF: >-
+    https://ftp.pride.ebi.ac.uk/pride/data/archive/2022/07/PXD030293/180814-Sample19.d.zip
+  CORPUS_DZIP_NAME_QTOF: 180814-Sample19.d.zip
+  # Keep these directory names in sync with
+  # crates/openaraw/tests/conformance.rs's qqq_fixture()/qtof_fixture()
+  # candidates.
   CORPUS_DIR: corpus
 
 jobs:
@@ -72,22 +80,28 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Download corpus fixture for conformance tests
+      - name: Download corpus fixtures for conformance tests
         shell: bash
         run: |
           mkdir -p "$CORPUS_DIR"
           curl -sSL --user-agent "OpenARaw-CI/1.0" -o "$CORPUS_DIR/$CORPUS_DZIP_NAME" "$PRIDE_DZIP_URL"
-          echo "Downloaded $(du -sh "$CORPUS_DIR/$CORPUS_DZIP_NAME" | cut -f1) corpus fixture archive"
+          echo "Downloaded $(du -sh "$CORPUS_DIR/$CORPUS_DZIP_NAME" | cut -f1) QQQ corpus fixture archive"
+          curl -sSL --user-agent "OpenARaw-CI/1.0" -o "$CORPUS_DIR/$CORPUS_DZIP_NAME_QTOF" "$PRIDE_DZIP_URL_QTOF"
+          echo "Downloaded $(du -sh "$CORPUS_DIR/$CORPUS_DZIP_NAME_QTOF" | cut -f1) QTOF corpus fixture archive"
 
-      - name: Extract corpus fixture (Unix)
+      - name: Extract corpus fixtures (Unix)
         if: runner.os != 'Windows'
         shell: bash
-        run: unzip -q "$CORPUS_DIR/$CORPUS_DZIP_NAME" -d "$CORPUS_DIR"
+        run: |
+          unzip -q "$CORPUS_DIR/$CORPUS_DZIP_NAME" -d "$CORPUS_DIR"
+          unzip -q "$CORPUS_DIR/$CORPUS_DZIP_NAME_QTOF" -d "$CORPUS_DIR"
 
-      - name: Extract corpus fixture (Windows)
+      - name: Extract corpus fixtures (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Expand-Archive -Path "$env:CORPUS_DIR/$env:CORPUS_DZIP_NAME" -DestinationPath "$env:CORPUS_DIR"
+        run: |
+          Expand-Archive -Path "$env:CORPUS_DIR/$env:CORPUS_DZIP_NAME" -DestinationPath "$env:CORPUS_DIR"
+          Expand-Archive -Path "$env:CORPUS_DIR/$env:CORPUS_DZIP_NAME_QTOF" -DestinationPath "$env:CORPUS_DIR"
 
       - name: cargo test
         run: cargo test --workspace --all-targets

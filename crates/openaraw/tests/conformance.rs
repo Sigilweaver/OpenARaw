@@ -11,11 +11,16 @@ fn first_existing(candidates: &[PathBuf]) -> Option<PathBuf> {
 }
 
 fn qtof_fixture() -> Option<PathBuf> {
-    // No QTOF bundle small enough for a CI download has turned up yet
-    // (see CORPUS.md), so this only checks the local dev corpus mount.
-    first_existing(&[PathBuf::from(
-        "/workspaces/Projects/Data/ARaw/PXD004426/20140806_TgAAL.d",
-    )])
+    first_existing(&[
+        // CI / repo-root corpus dir (gitignored; populated by ci.yml's
+        // `build` job before `cargo test` runs - see
+        // Sigilweaver/OpenARaw#28). This is the one CI actually uses.
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus/180814-Sample19.d"),
+        // Local dev setup with the full research corpus mounted - see
+        // CONTRIBUTING.md. Kept as a fallback even though it's ~247 MB
+        // zipped and not used by CI.
+        PathBuf::from("/workspaces/Projects/Data/ARaw/PXD004426/20140806_TgAAL.d"),
+    ])
 }
 
 fn qqq_fixture() -> Option<PathBuf> {

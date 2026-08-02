@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Testing
+
+- CI now also downloads a small QTOF `.d.zip` fixture from PRIDE
+  (PXD030293/180814-Sample19.d, ~3 MB unpacked, ~960 KB zipped, an Agilent
+  6550 acquisition per `AcqData/Devices.xml`'s `ModelNumber`) and unzips it
+  ahead of `cargo test`, so `test_qtof_conformance` now exercises a real
+  decode path in CI instead of always skipping. This replaces the
+  previously-known smallest QTOF candidate
+  (PXD004426/20140806_TgAAL.d, ~247 MB zipped - see CORPUS.md), which
+  remains as a local-dev-only fallback in `qtof_fixture()`. Closes #28.
+
 ## [0.1.6] - 2026-07-29
 
 ### Fixed
