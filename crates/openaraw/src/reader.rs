@@ -107,11 +107,10 @@ fn resolve_analyzer(device: Option<&DeviceInfo>, msscan: &MSScan) -> Analyzer {
 /// decoded spectrum stream.
 ///
 /// This is a pure aggregation of data OpenARaw already decodes - it does no
-/// additional binary parsing. Neither `MSScan.bin` nor the payload files
-/// expose a confirmed per-scan total-ion-current or base-peak field
-/// (`docs/format/01-msscan.md` only tentatively labels the stride-284
-/// offset-36 value as "TIC or related intensity metric", so reading it would
-/// be a guess), so both traces are derived from the decoded intensity arrays
+/// additional binary parsing. `MSScan.bin` does not expose a confirmed
+/// per-scan total-ion-current field; stride-284 offset 44 is base-peak
+/// intensity, while offset 36 remains unidentified. Both chromatogram traces
+/// are nevertheless derived from the decoded intensity arrays
 /// the same way the mzML writer would fill a spectrum's missing summary
 /// values: TIC is the sum of intensities in a scan and the base peak is the
 /// most intense point, via [`SpectrumRecord::effective_tic`] and
@@ -318,7 +317,7 @@ impl SpectrumSource for Reader {
                 retention_time_sec: rec.retention_time_min * 60.0,
                 total_ion_current: None,
                 base_peak_mz: None,
-                base_peak_intensity: None,
+                base_peak_intensity: rec.base_peak_intensity,
                 low_mz: rec.min_x,
                 high_mz: rec.max_x,
                 ion_injection_time_ms: None,
@@ -434,6 +433,42 @@ mod tests {
             resolve_analyzer(Some(&device), &msscan_with_stride(220)),
             Analyzer::TOFMS
         );
+    }
+
+    #[test]
+    fn spectrum_exposes_instrument_reported_base_peak() {
+        let record = crate::raw::msscan::ScanRecord {
+            scan_id: 1,
+            retention_time_min: 0.5,
+            ms_level: 1,
+            min_x: Some(100.0),
+            max_x: Some(1_000.0),
+            base_peak_intensity: Some(1_572_319.625),
+            mrm_channel_id: None,
+            target_mz: None,
+            collision_energy: None,
+            profile_params: None,
+            centroid_params: None,
+        };
+        let mut reader = Reader {
+            dir: PathBuf::new(),
+            bundle_name: String::new(),
+            msscan: MSScan {
+                global_header_size: 0,
+                stride: 284,
+                records: vec![record],
+            },
+            peak_path: PathBuf::new(),
+            profile_path: PathBuf::new(),
+            instrument: CvTerm::new("MS:1000490", "Agilent instrument model"),
+            analyzer: Analyzer::TOFMS,
+            start_timestamp: None,
+        };
+
+        let spectrum = reader.iter_spectra().next().unwrap();
+        assert_eq!(spectrum.base_peak_mz, None);
+        assert_eq!(spectrum.base_peak_intensity, Some(1_572_319.625));
+        assert_eq!(spectrum.total_ion_current, None);
     }
 
     /// Minimal MS-level spectrum carrying just the fields

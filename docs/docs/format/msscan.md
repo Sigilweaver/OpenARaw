@@ -53,8 +53,13 @@ All fields are little-endian. Offsets are relative to the start of each scan rec
 - `MSLevel` (int16, not int32 - the upper two bytes at offset 22 belong to a separate field and were previously misread as part of MSLevel): 1 for MS1, 2 for MS2. Observed in Q-TOF (PXD001310) where scan 8 had MSLevel=2 and had a precursor ion listed at other offsets.
 
 **Q-TOF-specific fields (confirmed for stride=284):**
-- Offset 36: TIC or related intensity metric (double).
-- Offset 44: Related intensity metric (double).
+- Offset 36: Unidentified metric (double). Values do not match decoded TIC or
+  the m/z of the maximum-intensity point. Resolving this requires a fixture or
+  repo-owned calibration path that can independently identify the value; it is
+  intentionally not exposed as TIC or base-peak m/z yet.
+- Offset 44: Base-peak intensity (double). Exactly matches the maximum decoded
+  centroid intensity in stride-284 corpus scans. This is not TIC; decoded scan
+  intensity sums differ from this value.
 - Offset 84: Precursor Target m/z (f64, 8 bytes). Confirmed for MS2 records in Q-TOF data across multiple datasets (e.g. PXD004426, PXD007734, PXD001310). Represents the center of the isolation window for Auto-MS/MS scans.
 - Offset 244: `MinX` - minimum m/z of the scan window (double, Da). Verified equal to the scan's declared mass range lower bound.
 - Offset 252: `MaxX` - maximum m/z of the scan window (double, Da).

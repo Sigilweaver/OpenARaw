@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Stride-284 `MSScan.bin` records now expose their instrument-reported
+  base-peak intensity from offset 44 on each spectrum. Corpus comparison
+  against OpenARaw's decoded centroid arrays confirmed that mapping and ruled
+  out TIC; offset 36 remains documented but intentionally unwired because its
+  interpretation could not be verified from repo-owned evidence. Refs #19.
+
 ### Testing
 
 - CI now also downloads a small QTOF `.d.zip` fixture from PRIDE

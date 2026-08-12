@@ -19,6 +19,9 @@ pub struct ScanRecord {
     pub ms_level: u32,
     pub min_x: Option<f64>,
     pub max_x: Option<f64>,
+    /// Instrument-reported base-peak intensity (record offset 44, f64).
+    /// Confirmed for stride-284 Q-TOF records only.
+    pub base_peak_intensity: Option<f64>,
     pub mrm_channel_id: Option<u32>,
     pub target_mz: Option<f64>,
     /// Precursor collision energy in eV (record offset 76, f64). Confirmed
@@ -128,7 +131,9 @@ impl MSScan {
 
             let mut min_x = None;
             let mut max_x = None;
+            let mut base_peak_intensity = None;
             if stride >= 284 {
+                base_peak_intensity = Some(LittleEndian::read_f64(&record_bytes[44..52]));
                 min_x = Some(LittleEndian::read_f64(&record_bytes[244..252]));
                 max_x = Some(LittleEndian::read_f64(&record_bytes[252..260]));
             }
@@ -206,6 +211,7 @@ impl MSScan {
                 ms_level,
                 min_x,
                 max_x,
+                base_peak_intensity,
                 mrm_channel_id,
                 target_mz,
                 collision_energy,
@@ -277,6 +283,25 @@ mod tests {
         let scan = MSScan::from_bytes(&bytes).unwrap();
         assert_eq!(scan.stride, 186);
         assert_eq!(scan.records.len(), 1);
+    }
+
+    #[test]
+    fn parses_stride_284_base_peak_intensity() {
+        let mut bytes = header();
+        let mut r = record(284, 1, 1);
+        LittleEndian::write_f64(&mut r[44..52], 1_572_319.625);
+        bytes.extend(r);
+
+        let scan = MSScan::from_bytes(&bytes).unwrap();
+        assert_eq!(scan.records[0].base_peak_intensity, Some(1_572_319.625));
+    }
+
+    #[test]
+    fn leaves_base_peak_intensity_absent_for_other_strides() {
+        for &stride in &[220u32, 216, 196, 186] {
+            let scan = MSScan::from_bytes(&msscan_bytes(stride, &[(1, 1)])).unwrap();
+            assert_eq!(scan.records[0].base_peak_intensity, None);
+        }
     }
 
     /// Regression test for the bounds guard fixed alongside the stride
