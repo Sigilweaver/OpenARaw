@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.7] - 2026-08-12
 
+### Changed
+
+- Adopt `openmassspec-core` 1.5.0. The new `SpectrumRecord`/`RunMetadata`
+  `extra` and `acquisition_event_id` fields are defaulted (empty / `None`);
+  no field is populated yet, so output is unchanged.
+
 ### Fixed
 
 - Stride-284 `MSScan.bin` records now expose their instrument-reported

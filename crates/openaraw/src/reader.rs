@@ -216,6 +216,7 @@ impl Reader {
 impl SpectrumSource for Reader {
     fn run_metadata(&self) -> RunMetadata {
         RunMetadata {
+            extra: ::std::collections::BTreeMap::new(),
             source_file_name: self.bundle_name.clone(),
             source_file_format: CvTerm::new("MS:1002846", "Agilent MassHunter format"),
             native_id_format: CvTerm::new("MS:1002848", "Agilent MassHunter nativeID format"),
@@ -301,6 +302,8 @@ impl SpectrumSource for Reader {
             let native_id = format!("scanId={}", rec.scan_id);
 
             SpectrumRecord {
+                extra: ::std::collections::BTreeMap::new(),
+                acquisition_event_id: None,
                 index: scan_idx,
                 scan_number: rec.scan_id,
                 native_id,
@@ -482,6 +485,8 @@ mod tests {
         intensity: Vec<f32>,
     ) -> SpectrumRecord {
         SpectrumRecord {
+            extra: ::std::collections::BTreeMap::new(),
+            acquisition_event_id: None,
             index,
             scan_number: index as u32 + 1,
             native_id: format!("scanId={}", index + 1),
