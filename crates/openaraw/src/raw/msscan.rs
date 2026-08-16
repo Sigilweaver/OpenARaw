@@ -22,6 +22,14 @@ pub struct ScanRecord {
     /// Instrument-reported base-peak intensity (record offset 44, f64).
     /// Confirmed for stride-284 Q-TOF records only.
     pub base_peak_intensity: Option<f64>,
+    /// Raw value at record offset 36 (f64), decoded for stride-284 Q-TOF
+    /// records but of unconfirmed meaning. Corpus comparison (PXD001310)
+    /// ruled out both decoded TIC (sum of intensities) and the m/z of the
+    /// max-intensity centroid point - the values are in a plausible m/z-like
+    /// range (~400-600 for this corpus) but don't match either quantity.
+    /// Intentionally not mapped to `total_ion_current` or `base_peak_mz` in
+    /// `reader.rs`; see `docs/format/01-msscan.md` and Sigilweaver/OpenARaw#19.
+    pub unidentified_offset_36: Option<f64>,
     pub mrm_channel_id: Option<u32>,
     pub target_mz: Option<f64>,
     /// Precursor collision energy in eV (record offset 76, f64). Confirmed
@@ -132,7 +140,9 @@ impl MSScan {
             let mut min_x = None;
             let mut max_x = None;
             let mut base_peak_intensity = None;
+            let mut unidentified_offset_36 = None;
             if stride >= 284 {
+                unidentified_offset_36 = Some(LittleEndian::read_f64(&record_bytes[36..44]));
                 base_peak_intensity = Some(LittleEndian::read_f64(&record_bytes[44..52]));
                 min_x = Some(LittleEndian::read_f64(&record_bytes[244..252]));
                 max_x = Some(LittleEndian::read_f64(&record_bytes[252..260]));
@@ -212,6 +222,7 @@ impl MSScan {
                 min_x,
                 max_x,
                 base_peak_intensity,
+                unidentified_offset_36,
                 mrm_channel_id,
                 target_mz,
                 collision_energy,
@@ -302,6 +313,76 @@ mod tests {
             let scan = MSScan::from_bytes(&msscan_bytes(stride, &[(1, 1)])).unwrap();
             assert_eq!(scan.records[0].base_peak_intensity, None);
         }
+    }
+
+    #[test]
+    fn parses_stride_284_unidentified_offset_36() {
+        let mut bytes = header();
+        let mut r = record(284, 1, 1);
+        LittleEndian::write_f64(&mut r[36..44], 513.9653233122384);
+        bytes.extend(r);
+
+        let scan = MSScan::from_bytes(&bytes).unwrap();
+        assert_eq!(
+            scan.records[0].unidentified_offset_36,
+            Some(513.9653233122384)
+        );
+    }
+
+    #[test]
+    fn leaves_unidentified_offset_36_absent_for_other_strides() {
+        for &stride in &[220u32, 216, 196, 186] {
+            let scan = MSScan::from_bytes(&msscan_bytes(stride, &[(1, 1)])).unwrap();
+            assert_eq!(scan.records[0].unidentified_offset_36, None);
+        }
+    }
+
+    /// Corpus files live out of tree (large real-world acquisitions, not
+    /// checked into the repo - see the fixture pattern in
+    /// `crates/openaraw/tests/conformance.rs`), so this test skips cleanly
+    /// when the fixture isn't present locally instead of failing the build.
+    /// Exercises the real stride-284 record bytes (PXD001310, per
+    /// `docs/format/01-msscan.md`'s validated corpus table and
+    /// Sigilweaver/OpenARaw#19) to confirm offset 36 decodes to a sensible
+    /// finite value rather than only ever being checked against synthetic
+    /// buffers.
+    #[test]
+    fn stride_284_offsets_36_and_44_decode_from_real_corpus() {
+        let path = std::path::Path::new(
+            "/workspaces/Projects/Data/ARaw/PXD001310/2013-02-26-001 EF CR DMSO 60m r1.d/AcqData/MSScan.bin",
+        );
+        if !path.exists() {
+            eprintln!("skip: no PXD001310 corpus fixture available");
+            return;
+        }
+
+        let scan = MSScan::from_path(path).expect("parse real PXD001310 MSScan.bin");
+        assert_eq!(scan.stride, 284);
+        assert!(!scan.records.is_empty());
+
+        for rec in &scan.records {
+            let v36 = rec
+                .unidentified_offset_36
+                .expect("offset 36 decoded for stride 284");
+            let v44 = rec
+                .base_peak_intensity
+                .expect("offset 44 decoded for stride 284");
+            assert!(v36.is_finite(), "offset 36 should be a finite double");
+            assert!(v44.is_finite(), "offset 44 should be a finite double");
+            // The two offsets are documented as distinct quantities (see
+            // docs/format/01-msscan.md) - confirm the fixture doesn't
+            // regress to reading the same bytes for both.
+            assert_ne!(v36, v44);
+        }
+
+        // Spot-check the first record's exact value to catch an accidental
+        // offset shift, not just "some finite number".
+        assert_eq!(scan.records[0].scan_id, 2271);
+        assert_eq!(
+            scan.records[0].unidentified_offset_36,
+            Some(513.9653233122384)
+        );
+        assert_eq!(scan.records[0].base_peak_intensity, Some(1_572_319.625));
     }
 
     /// Regression test for the bounds guard fixed alongside the stride

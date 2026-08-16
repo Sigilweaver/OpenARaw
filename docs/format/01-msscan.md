@@ -52,7 +52,10 @@ All fields are little-endian. Offsets are relative to the start of each scan rec
 - Offset 36: Unidentified metric (double). Values do not match decoded TIC or
   the m/z of the maximum-intensity point. Resolving this requires a fixture or
   repo-owned calibration path that can independently identify the value; it is
-  intentionally not exposed as TIC or base-peak m/z yet.
+  intentionally not exposed as TIC or base-peak m/z yet. Decoded into
+  `ScanRecord::unidentified_offset_36` and, when present, surfaced per-spectrum
+  as `extra["openaraw.msscan_offset36_unidentified"]` so the raw value is
+  available for future calibration work without re-parsing `MSScan.bin`.
 - Offset 44: Base-peak intensity (double). Exactly matches the maximum decoded
   centroid intensity in stride-284 corpus scans. This is not TIC; decoded scan
   intensity sums differ from this value.
