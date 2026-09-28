@@ -20,6 +20,7 @@ pub struct Reader {
     pub dir: PathBuf,
     pub bundle_name: String,
     pub msscan: MSScan,
+    pub device: Option<DeviceInfo>,
     peak_path: PathBuf,
     profile_path: PathBuf,
     instrument: CvTerm,
@@ -204,6 +205,7 @@ impl Reader {
             dir,
             bundle_name,
             msscan,
+            device,
             peak_path: acq_data.join("MSPeak.bin"),
             profile_path: acq_data.join("MSProfile.bin"),
             instrument,
@@ -215,8 +217,21 @@ impl Reader {
 
 impl SpectrumSource for Reader {
     fn run_metadata(&self) -> RunMetadata {
+        let mut extra = ::std::collections::BTreeMap::new();
+        extra.insert(
+            "openaraw.msscan_header_size".to_string(),
+            self.msscan.global_header_size.to_string(),
+        );
+        extra.insert(
+            "openaraw.msscan_stride".to_string(),
+            self.msscan.stride.to_string(),
+        );
+        if let Some(device) = &self.device {
+            extra.insert("openaraw.device_name".to_string(), device.name.clone());
+            extra.insert("openaraw.device_model".to_string(), device.model.clone());
+        }
         RunMetadata {
-            extra: ::std::collections::BTreeMap::new(),
+            extra,
             source_file_name: self.bundle_name.clone(),
             source_file_format: CvTerm::new("MS:1002846", "Agilent MassHunter format"),
             native_id_format: CvTerm::new("MS:1002848", "Agilent MassHunter nativeID format"),
@@ -301,8 +316,51 @@ impl SpectrumSource for Reader {
             // Create native ID
             let native_id = format!("scanId={}", rec.scan_id);
 
+            let mut extra = ::std::collections::BTreeMap::new();
+            if let Some(value) = rec.mrm_channel_id {
+                extra.insert("openaraw.mrm_channel_id".to_string(), value.to_string());
+            }
+            for (kind, params) in [
+                ("profile", &rec.profile_params),
+                ("centroid", &rec.centroid_params),
+            ] {
+                if let Some(params) = params {
+                    let prefix = format!("openaraw.{kind}");
+                    extra.insert(format!("{prefix}.format_id"), params.format_id.to_string());
+                    extra.insert(format!("{prefix}.offset"), params.offset.to_string());
+                    extra.insert(
+                        format!("{prefix}.byte_count"),
+                        params.byte_count.to_string(),
+                    );
+                    extra.insert(
+                        format!("{prefix}.point_count"),
+                        params.point_count.to_string(),
+                    );
+                    if let Some(value) = params.uncompressed_byte_count {
+                        extra.insert(
+                            format!("{prefix}.uncompressed_byte_count"),
+                            value.to_string(),
+                        );
+                    }
+                }
+            }
+            if let Some(v) = rec.unidentified_offset_36 {
+                // Raw stride-284 record offset 36 (Q-TOF only). Decoded but
+                // its meaning is unconfirmed - corpus comparison ruled out
+                // both TIC and base-peak m/z, so it's deliberately not
+                // mapped to `total_ion_current` or `base_peak_mz` below.
+                // Stashed here (rather than dropped) so downstream
+                // calibration work has the raw value without re-parsing
+                // MSScan.bin. See `ScanRecord::unidentified_offset_36` and
+                // `docs/format/01-msscan.md`.
+                extra.insert(
+                    "openaraw.msscan_offset36_unidentified".to_string(),
+                    v.to_string(),
+                );
+            }
+
             SpectrumRecord {
-                extra: ::std::collections::BTreeMap::new(),
+                extra,
                 acquisition_event_id: None,
                 index: scan_idx,
                 scan_number: rec.scan_id,
@@ -447,6 +505,7 @@ mod tests {
             min_x: Some(100.0),
             max_x: Some(1_000.0),
             base_peak_intensity: Some(1_572_319.625),
+            unidentified_offset_36: Some(513.9653233122384),
             mrm_channel_id: None,
             target_mz: None,
             collision_energy: None,
@@ -461,6 +520,7 @@ mod tests {
                 stride: 284,
                 records: vec![record],
             },
+            device: None,
             peak_path: PathBuf::new(),
             profile_path: PathBuf::new(),
             instrument: CvTerm::new("MS:1000490", "Agilent instrument model"),
@@ -472,6 +532,49 @@ mod tests {
         assert_eq!(spectrum.base_peak_mz, None);
         assert_eq!(spectrum.base_peak_intensity, Some(1_572_319.625));
         assert_eq!(spectrum.total_ion_current, None);
+        // Offset 36's meaning isn't confirmed, so it isn't mapped to
+        // total_ion_current/base_peak_mz - it's stashed in `extra` instead
+        // (see Sigilweaver/OpenARaw#19).
+        assert_eq!(
+            spectrum.extra.get("openaraw.msscan_offset36_unidentified"),
+            Some(&"513.9653233122384".to_string())
+        );
+    }
+
+    #[test]
+    fn spectrum_extra_omits_offset_36_key_when_absent() {
+        let record = crate::raw::msscan::ScanRecord {
+            scan_id: 1,
+            retention_time_min: 0.5,
+            ms_level: 1,
+            min_x: None,
+            max_x: None,
+            base_peak_intensity: None,
+            unidentified_offset_36: None,
+            mrm_channel_id: None,
+            target_mz: None,
+            collision_energy: None,
+            profile_params: None,
+            centroid_params: None,
+        };
+        let mut reader = Reader {
+            dir: PathBuf::new(),
+            bundle_name: String::new(),
+            msscan: MSScan {
+                global_header_size: 0,
+                stride: 220,
+                records: vec![record],
+            },
+            peak_path: PathBuf::new(),
+            profile_path: PathBuf::new(),
+            instrument: CvTerm::new("MS:1000490", "Agilent instrument model"),
+            analyzer: Analyzer::TOFMS,
+            start_timestamp: None,
+            device: None,
+        };
+
+        let spectrum = reader.iter_spectra().next().unwrap();
+        assert!(spectrum.extra.is_empty());
     }
 
     /// Minimal MS-level spectrum carrying just the fields
