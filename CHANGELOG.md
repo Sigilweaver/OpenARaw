@@ -13,6 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Added bounded iteration, chromatograms, MSScan index data, and device
   identity. Namespaced extras preserve scan parameters and device details.
 
+### Changed
+
+- Adopts `openmassspec-core` 2.0.0 (arrow 60). Rust users building against
+  core 1.x must upgrade core too.
+
+### Fixed
+
+- Stride-284 `MSScan.bin` record offset 36 is now decoded into
+  `ScanRecord::unidentified_offset_36` and, when present, surfaced on each
+  spectrum via `extra["openaraw.msscan_offset36_unidentified"]`. Its
+  semantics remain unconfirmed - corpus comparison against PXD001310 rules
+  out both decoded TIC and the max-intensity centroid's m/z, so it is
+  deliberately not mapped to `total_ion_current` or `base_peak_mz`. This
+  closes the "never parsed" half of #19; identifying the quantity itself
+  still needs a fixture or repo-owned calibration path and stays open.
+
 ## [0.1.7] - 2026-08-12
 
 ### Changed
