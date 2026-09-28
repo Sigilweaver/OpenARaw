@@ -20,6 +20,7 @@ pub struct Reader {
     pub dir: PathBuf,
     pub bundle_name: String,
     pub msscan: MSScan,
+    pub device: Option<DeviceInfo>,
     peak_path: PathBuf,
     profile_path: PathBuf,
     instrument: CvTerm,
@@ -204,6 +205,7 @@ impl Reader {
             dir,
             bundle_name,
             msscan,
+            device,
             peak_path: acq_data.join("MSPeak.bin"),
             profile_path: acq_data.join("MSProfile.bin"),
             instrument,
@@ -215,8 +217,21 @@ impl Reader {
 
 impl SpectrumSource for Reader {
     fn run_metadata(&self) -> RunMetadata {
+        let mut extra = ::std::collections::BTreeMap::new();
+        extra.insert(
+            "openaraw.msscan_header_size".to_string(),
+            self.msscan.global_header_size.to_string(),
+        );
+        extra.insert(
+            "openaraw.msscan_stride".to_string(),
+            self.msscan.stride.to_string(),
+        );
+        if let Some(device) = &self.device {
+            extra.insert("openaraw.device_name".to_string(), device.name.clone());
+            extra.insert("openaraw.device_model".to_string(), device.model.clone());
+        }
         RunMetadata {
-            extra: ::std::collections::BTreeMap::new(),
+            extra,
             source_file_name: self.bundle_name.clone(),
             source_file_format: CvTerm::new("MS:1002846", "Agilent MassHunter format"),
             native_id_format: CvTerm::new("MS:1002848", "Agilent MassHunter nativeID format"),
@@ -301,8 +316,37 @@ impl SpectrumSource for Reader {
             // Create native ID
             let native_id = format!("scanId={}", rec.scan_id);
 
+            let mut extra = ::std::collections::BTreeMap::new();
+            if let Some(value) = rec.mrm_channel_id {
+                extra.insert("openaraw.mrm_channel_id".to_string(), value.to_string());
+            }
+            for (kind, params) in [
+                ("profile", &rec.profile_params),
+                ("centroid", &rec.centroid_params),
+            ] {
+                if let Some(params) = params {
+                    let prefix = format!("openaraw.{kind}");
+                    extra.insert(format!("{prefix}.format_id"), params.format_id.to_string());
+                    extra.insert(format!("{prefix}.offset"), params.offset.to_string());
+                    extra.insert(
+                        format!("{prefix}.byte_count"),
+                        params.byte_count.to_string(),
+                    );
+                    extra.insert(
+                        format!("{prefix}.point_count"),
+                        params.point_count.to_string(),
+                    );
+                    if let Some(value) = params.uncompressed_byte_count {
+                        extra.insert(
+                            format!("{prefix}.uncompressed_byte_count"),
+                            value.to_string(),
+                        );
+                    }
+                }
+            }
+
             SpectrumRecord {
-                extra: ::std::collections::BTreeMap::new(),
+                extra,
                 acquisition_event_id: None,
                 index: scan_idx,
                 scan_number: rec.scan_id,
@@ -461,6 +505,7 @@ mod tests {
                 stride: 284,
                 records: vec![record],
             },
+            device: None,
             peak_path: PathBuf::new(),
             profile_path: PathBuf::new(),
             instrument: CvTerm::new("MS:1000490", "Agilent instrument model"),

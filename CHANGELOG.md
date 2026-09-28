@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Python spectra and run metadata now expose every shared record field.
+  Added bounded iteration, chromatograms, MSScan index data, and device
+  identity. Namespaced extras preserve scan parameters and device details.
+
 ## [0.1.7] - 2026-08-12
 
 ### Changed
