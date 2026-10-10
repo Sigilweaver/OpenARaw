@@ -24,7 +24,7 @@ minimal dependencies.
 openaraw = "0.1"
 ```
 
-OpenARaw needs Rust 1.85 or newer. There are no native or system
+OpenARaw needs Rust 1.88 or newer. There are no native or system
 dependencies.
 
 ## Python
