@@ -8,14 +8,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::raw::metadata::{parse_acquired_time, parse_devices_xml, DeviceInfo};
-use crate::raw::mspeak::{decode_peak_block, PeakSpectrum};
-use crate::raw::msprofile::{decode_profile_block, ProfileSpectrum};
+use crate::raw::mspeak::decode_peak_block;
+use crate::raw::msprofile::decode_profile_block;
 use crate::raw::msscan::MSScan;
-
-pub enum DecodedSpectrum {
-    Peak(PeakSpectrum),
-    Profile(ProfileSpectrum),
-}
 
 pub struct Reader {
     pub dir: PathBuf,
