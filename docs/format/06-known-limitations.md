@@ -13,9 +13,8 @@ Some files uploaded to PRIDE are structurally malformed, missing the mandatory `
 ## 2. Spectrum Fields Not Populated From `MSScan.bin`
 
 `SpectrumRecord::polarity` and `PrecursorInfo::selected_mz` are always
-`None` in the reader's output. `polarity` is recoverable but not yet
-wired in; `selected_mz` was investigated against the corpus and not
-found:
+`None` in the reader's output. `polarity` is recoverable but not
+mapped; no source for `selected_mz` is known:
 
 - **`polarity`**: recoverable from record offset 64 (`int32`). The
   `MSScan.xsd` shipped inside each bundle lists the `ScanRecord` fields
@@ -28,34 +27,30 @@ found:
   Positive (0-0.1 min), Negative (0.1-0.5 min), Positive (0.5 min on):
   offset 64 reads `0` for scans at 0.04-0.12 min, `1` for 38 scans at
   0.22-0.53 min, and `0` for every scan after that. This matches
-  `MSActualDefs.xml`'s `"0=Postive,1=Negative"` encoding. An earlier
-  version of this page said no offset correlated with polarity; that was
-  wrong. Mapping it to `SpectrumRecord::polarity` is pending.
+  `MSActualDefs.xml`'s `"0=Postive,1=Negative"` encoding. The reader
+  does not map it to `SpectrumRecord::polarity`.
 - **`selected_mz`**: distinct from `target_mz` (the isolation window
   center, which the reader already exposes via
-  `PrecursorInfo::target_mz`). Every `f32`/`f64` offset in the full
-  record was scanned across hundreds of MS2 scans spanning strides 216,
-  220, and 284, looking for a second m/z-like value near `target_mz`;
-  none was found. Either Agilent does not store a distinct
+  `PrecursorInfo::target_mz`). No `f32`/`f64` offset in the record holds
+  a second m/z-like value near `target_mz` across hundreds of MS2 scans
+  spanning strides 216, 220, and 284. Either Agilent does not store a distinct
   selected/monoisotopic precursor m/z in this record (recovering one
   would require re-picking against the isolation window in `MSPeak.bin`,
   a processing step this reader does not perform), or it is identical to
   `target_mz` and therefore not a distinct field.
 
-If `selected_mz` turns out to be recoverable via a source not yet
-checked (e.g. a fuller decode of `MSPeriodicActuals.bin`'s per-channel
-`Value` semantics), treat this section as the place to update once
-there's corpus evidence to cite - not just a plausible byte offset.
+A source for `selected_mz` outside `MSScan.bin` (e.g. a fuller decode
+of `MSPeriodicActuals.bin`'s per-channel `Value` semantics) is
+unchecked. Any change here needs corpus evidence, not just a plausible
+byte offset.
 
 ## 3. No Ion Mobility / CCS Support (Agilent 6560 IM-QTOF)
 
 `SpectrumRecord::inv_mobility` and `SpectrumRecord::inv_mobility_per_peak`
 are always `None`; `RunMetadata::mobility_array_kind` is always `None` as
-well. This is a different situation from section 2 above: those two
-fields were investigated against real records and found absent from the
-layout. Ion mobility has never been investigated against a real record,
-because **no ion-mobility acquisition exists anywhere in the validation
-corpus to investigate.**
+well. Unlike section 2, there is no real record to check against:
+**no ion-mobility acquisition exists anywhere in the validation
+corpus.**
 
 All 338 cataloged `.d` directories come from the PRIDE Archive (see
 `CORPUS.md`), a proteomics-focused repository. Every `Devices.xml` mass
@@ -89,9 +84,21 @@ undocumented-as-a-format-question rather than implemented:
   time requiring the reader to apply a calibration, is unknown without a
   sample.
 
-**Next step if this is picked up again:** obtain a real 6560 IM-QTOF `.d`
+**Prerequisite for support:** obtain a real 6560 IM-QTOF `.d`
 bundle from a public, non-vendor-tool-verified source (a PRIDE, MetaboLights,
 or similar open-data submission using this instrument) and add it to the
-corpus before writing any parsing code. Until then, `inv_mobility` /
+corpus before writing any parsing code. Without one, `inv_mobility` /
 `inv_mobility_per_peak` / `mobility_array_kind` should stay `None` rather
 than be backed by an unverified field guess.
+
+## 4. Q-TOF m/z and Profile Spectra
+
+- **Q-TOF m/z values are incorrect.** Q-TOF centroid x-values in
+  `MSPeak.bin` are uncalibrated flight times. The reader reports them as
+  m/z without applying the bundle's mass calibration
+  (`DefaultMassCal.xml` / `MSMassCal.bin`), so the error depends on m/z
+  and runs to hundreds of Da. QQQ (MRM) centroid data is correct.
+- **Profile spectra are not emitted.** The `MSProfile.bin` layout in
+  `04-msprofile.md` does not decode real blocks. Each scan falls back to
+  centroid data; failures are logged and counted by
+  `Reader::profile_decode_failures()`.

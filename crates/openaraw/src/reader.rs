@@ -69,9 +69,8 @@ fn instrument_cv_for_model(model: &str) -> CvTerm {
 }
 
 /// Resolve the run's instrument CV term, preferring the real device
-/// identity parsed from `Devices.xml` over the legacy record-stride
-/// guess. Falls back to the stride-based guess (with the same generic
-/// `MS:1000461` tag it always used) when `Devices.xml` is missing,
+/// identity parsed from `Devices.xml` over the record-stride guess.
+/// Falls back to the stride-based guess (generic `MS:1000461` tag) when `Devices.xml` is missing,
 /// unparseable, or lacks the fields we need - this is a real condition
 /// in the wild (see `docs/format/06-known-limitations.md`), not just a
 /// defensive fallback.
@@ -90,7 +89,7 @@ fn resolve_instrument(device: Option<&DeviceInfo>, msscan: &MSScan) -> CvTerm {
 }
 
 /// Resolve the mass analyzer type, preferring `Devices.xml`'s `<Name>`
-/// field over the legacy record-stride guess.
+/// field over the record-stride guess.
 ///
 /// The mass spectrometer `<Device>`'s `<Name>` is confirmed (across the
 /// 330-bundle validation corpus, see `CORPUS.md` and the module docs on
@@ -302,13 +301,9 @@ impl SpectrumSource for Reader {
             instrument_serial_number: None,
             software_name: "openaraw".to_string(),
             software_version: env!("CARGO_PKG_VERSION").to_string(),
-            // Not currently parsed: `Contents.xml`'s `AcqSoftwareVersion`
-            // element exists in the corpus (see
-            // docs/format/01-msscan.md) but so far has only been used as
-            // corroborating evidence for instrument-family identification,
-            // not extracted into a reusable field. Wiring it up as a real
-            // acquisition-software string is future work, not part of this
-            // minimal core-1.4.0 adaptation.
+            // Not parsed: `Contents.xml`'s `AcqSoftwareVersion` element
+            // exists in the corpus (see docs/format/01-msscan.md) but is
+            // not extracted into a field.
             acquisition_software_name: None,
             acquisition_software_version: None,
             start_timestamp: self.start_timestamp.clone(),
@@ -441,7 +436,7 @@ impl SpectrumSource for Reader {
                 scan_number: rec.scan_id,
                 native_id,
                 ms_level: rec.ms_level,
-                // Not wired in yet. Record offset 64 is IonPolarity per the
+                // Not mapped. Record offset 64 is IonPolarity per the
                 // bundle's own MSScan.xsd (0 = positive, 1 = negative),
                 // corroborated on PXD031771/526b_1.d. See
                 // docs/format/06-known-limitations.md.
@@ -471,17 +466,15 @@ impl SpectrumSource for Reader {
                         target_mz = Some(mz);
                         // Q-TOF MS2: the parent scan is the record's
                         // DataDependentScanParamType.DDScanID (per the
-                        // bundle's MSScan.xsd), which is not decoded yet.
-                        // Leave the precursor reference unset rather than
-                        // pointing it at this spectrum's own scan.
+                        // bundle's MSScan.xsd), which is not decoded, so
+                        // the precursor reference is left unset.
                     }
 
                     Some(PrecursorInfo {
                         precursor_native_id,
                         target_mz,
-                        // No second m/z field distinct from target_mz was
-                        // found anywhere in the record across the corpus;
-                        // see docs/format/06-known-limitations.md.
+                        // The record holds no m/z field distinct from
+                        // target_mz; see docs/format/06-known-limitations.md.
                         selected_mz: None,
                         collision_energy: rec.collision_energy,
                         ..Default::default()

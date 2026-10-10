@@ -400,8 +400,7 @@ mod tests {
         assert_eq!(scan.records[0].base_peak_intensity, Some(1_572_319.625));
     }
 
-    /// Regression test for the bounds guard fixed alongside the stride
-    /// probe: a payload of 1..=3 bytes is too short for the 4-byte ScanID
+    /// Bounds guard in the stride probe: a payload of 1..=3 bytes is too short for the 4-byte ScanID
     /// the probe reads, and must produce a parse error rather than
     /// panicking on an out-of-bounds slice.
     #[test]

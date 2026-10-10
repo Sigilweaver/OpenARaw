@@ -7,14 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Known issues
-
-- Q-TOF m/z values are incorrect in 0.2.0 and earlier: centroid
-  x-values are uncalibrated flight times and are reported without the
-  bundle's mass calibration. Profile spectra are never emitted (profile
-  blocks fail to decode and fall back to centroid). QQQ MRM data is
-  unaffected. A fix is in progress; see README "Known issues".
-
 ### Added
 
 - `Reader::profile_decode_failures()` and
@@ -46,9 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scan; it is `None` until the parent scan (DDScanID) is decoded.
 - `MSScan.bin` stride detection no longer overflows when the first
   ScanID is near `u32::MAX`.
-- Docs: `IonPolarity` is at `MSScan.bin` record offset 64 per the
-  bundle's `MSScan.xsd`, corroborated on PXD031771. The previous "not
-  recoverable" statement was wrong. Polarity is not yet populated.
+- Docs: `IonPolarity` is at `MSScan.bin` record offset 64 (per the
+  bundle's `MSScan.xsd`, checked on PXD031771); the docs said polarity
+  was not recoverable.
+- Docs: README "Known issues" and format doc status lines for Q-TOF m/z
+  and profile decoding, which the docs marked as confirmed.
 
 ## [0.2.0] - 2026-09-28
 
