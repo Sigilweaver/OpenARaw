@@ -7,6 +7,8 @@ use openmassspec_core::{
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::raw::calibration::{CalibrationSource, TofCalibration, POLYNOMIAL_VALUES};
+use crate::raw::defaultmasscal::DefaultCalibration;
 use crate::raw::metadata::{parse_acquired_time, parse_devices_xml, DeviceInfo};
 use crate::raw::mspeak::decode_peak_block;
 use crate::raw::msprofile::decode_profile_block;
@@ -22,6 +24,9 @@ pub struct Reader {
     instrument: CvTerm,
     analyzer: Analyzer,
     start_timestamp: Option<String>,
+    /// Per-scan Q-TOF calibration, indexed like `msscan.records`. Empty
+    /// when the bundle has no usable `MSMassCal.bin`.
+    calibrations: Vec<Option<TofCalibration>>,
     profile_decode_failures: AtomicUsize,
     centroid_decode_failures: AtomicUsize,
 }
@@ -121,15 +126,11 @@ fn resolve_analyzer(device: Option<&DeviceInfo>, msscan: &MSScan) -> Analyzer {
 /// decoded spectrum stream.
 ///
 /// This is a pure aggregation of data OpenARaw already decodes - it does no
-/// additional binary parsing. `MSScan.bin` does not expose a confirmed
-/// per-scan total-ion-current field; stride-284 offset 44 is base-peak
-/// intensity, while offset 36 remains unidentified. Both chromatogram traces
-/// are nevertheless derived from the decoded intensity arrays
-/// the same way the mzML writer would fill a spectrum's missing summary
-/// values: TIC is the sum of intensities in a scan and the base peak is the
-/// most intense point, via [`SpectrumRecord::effective_tic`] and
-/// [`SpectrumRecord::effective_base_peak`]. Building the traces this way keeps
-/// them self-consistent with the spectra actually emitted for the run.
+/// additional binary parsing. Each point comes from
+/// [`SpectrumRecord::effective_tic`] and
+/// [`SpectrumRecord::effective_base_peak`]: the instrument-reported `TIC` /
+/// `BasePeakValue` from `MSScan.bin` where the record carries them (Q-TOF),
+/// otherwise the sum and maximum of the decoded intensities.
 ///
 /// Only MS1 scans contribute: a survey (MS1) trace is what the "total ion
 /// current chromatogram" / "basepeak chromatogram" CV terms describe, and
@@ -188,6 +189,164 @@ where
     ]
 }
 
+/// Log one problem per scan: the first at warn level, the rest at debug,
+/// and return the running count.
+fn log_scan_problem(count: &mut usize, bundle: &str, scan_index: usize, msg: &str) {
+    if *count == 0 {
+        log::warn!("{bundle}: scan index {scan_index}: {msg}");
+    } else {
+        log::debug!("{bundle}: scan index {scan_index}: {msg}");
+    }
+    *count += 1;
+}
+
+/// The `ValueUseFlags` for an `MSMassCal.bin` record's `Polynomial` values
+/// (0 when every coefficient slot is zero). The record does not store
+/// them; they come from the `DefaultMassCal.xml` entry whose `Polynomial`
+/// values equal the record's to within 1e-12 relative, preferring the
+/// entry the scan's `CalibrationID` names.
+fn polynomial_flags(
+    record: &[f64],
+    calibration_id: Option<i32>,
+    defaults: &[DefaultCalibration],
+) -> crate::Result<u32> {
+    let values = record.get(2..).unwrap_or(&[]);
+    // With every coefficient slot zero the flags select nothing.
+    if values.len() == POLYNOMIAL_VALUES && values[2..].iter().all(|v| *v == 0.0) {
+        return Ok(0);
+    }
+    // The XML holds the values as 15-significant-digit decimal text, so
+    // they match the record's doubles to about 1e-15 relative.
+    let close = |a: f64, b: f64| (a - b).abs() <= 1e-12 * a.abs().max(b.abs());
+    let matches = |d: &&DefaultCalibration| {
+        d.polynomial.len() == values.len()
+            && d.polynomial.iter().zip(values).all(|(a, b)| close(*a, *b))
+    };
+    defaults
+        .iter()
+        .filter(|d| Some(d.id) == calibration_id)
+        .find(matches)
+        .or_else(|| defaults.iter().find(matches))
+        .map(|d| d.polynomial_flags)
+        .ok_or_else(|| {
+            crate::Error::Parse(
+                "MSMassCal.bin Polynomial values match no DefaultMassCal.xml entry, \
+                 so their ValueUseFlags are unknown"
+                    .into(),
+            )
+        })
+}
+
+/// Load per-scan Q-TOF calibrations (see `docs/format/05-msmasscal.md`).
+/// Returns an empty list for non-Q-TOF bundles.
+///
+/// Each scan uses its own `MSMassCal.bin` record (record `i` belongs to
+/// `MSScan.bin` record `i`), with the `Polynomial` step's `ValueUseFlags`
+/// taken from `DefaultMassCal.xml`. When `MSMassCal.bin` is absent the
+/// scan uses the `DefaultMassCal.xml` entry for its `CalibrationID`; this
+/// is logged at info level. When `MSMassCal.bin` is unreadable, has the
+/// wrong record count, or a record is unusable, the affected scans fall
+/// back to `DefaultMassCal.xml` with a warning. Scans with no usable
+/// calibration at all are logged and get `None`; their payloads are then
+/// counted as decode failures rather than reported as m/z.
+fn load_calibrations(acq: &Path, msscan: &MSScan, bundle: &str) -> Vec<Option<TofCalibration>> {
+    if !crate::raw::msscan::is_qtof_stride(msscan.stride) {
+        return Vec::new();
+    }
+
+    let xml_path = acq.join("DefaultMassCal.xml");
+    let defaults = if xml_path.exists() {
+        crate::raw::defaultmasscal::parse(&xml_path).unwrap_or_else(|err| {
+            log::warn!("{bundle}: {err}");
+            Vec::new()
+        })
+    } else {
+        log::warn!("{bundle}: DefaultMassCal.xml not found");
+        Vec::new()
+    };
+
+    let mascal_path = acq.join("MSMassCal.bin");
+    let records = if mascal_path.exists() {
+        match crate::raw::msmasscal::parse(&mascal_path) {
+            Ok(records) if records.len() == msscan.records.len() => Some(records),
+            Ok(records) => {
+                log::warn!(
+                    "{bundle}: MSMassCal.bin has {} records but MSScan.bin has {} scans; \
+                     using DefaultMassCal.xml",
+                    records.len(),
+                    msscan.records.len()
+                );
+                None
+            }
+            Err(err) => {
+                log::warn!("{bundle}: MSMassCal.bin: {err}; using DefaultMassCal.xml");
+                None
+            }
+        }
+    } else {
+        if !defaults.is_empty() {
+            log::info!("{bundle}: MSMassCal.bin not found; using DefaultMassCal.xml");
+        }
+        None
+    };
+
+    let default_for = |id: Option<i32>| -> crate::Result<TofCalibration> {
+        defaults
+            .iter()
+            .find(|d| Some(d.id) == id)
+            .ok_or_else(|| {
+                crate::Error::Parse(format!(
+                    "no DefaultMassCal.xml entry for CalibrationID {id:?}"
+                ))
+            })?
+            .to_tof()
+    };
+
+    let (mut fallbacks, mut missing) = (0usize, 0usize);
+    let calibrations = msscan
+        .records
+        .iter()
+        .enumerate()
+        .map(|(i, scan)| {
+            if let Some(records) = &records {
+                let coefficients = &records[i].coefficients;
+                let own = polynomial_flags(coefficients, scan.calibration_id, &defaults).and_then(
+                    |flags| {
+                        TofCalibration::from_coefficients(
+                            coefficients,
+                            flags,
+                            CalibrationSource::MassCalRecord,
+                        )
+                    },
+                );
+                match own {
+                    Ok(cal) => return Some(cal),
+                    Err(err) => log_scan_problem(
+                        &mut fallbacks,
+                        bundle,
+                        i,
+                        &format!("{err}; using DefaultMassCal.xml"),
+                    ),
+                }
+            }
+            match default_for(scan.calibration_id) {
+                Ok(cal) => Some(cal),
+                Err(err) => {
+                    log_scan_problem(&mut missing, bundle, i, &format!("no calibration: {err}"));
+                    None
+                }
+            }
+        })
+        .collect();
+    if fallbacks > 0 {
+        log::warn!("{bundle}: {fallbacks} scans fell back to DefaultMassCal.xml");
+    }
+    if missing > 0 {
+        log::warn!("{bundle}: {missing} scans have no usable mass calibration");
+    }
+    calibrations
+}
+
 impl Reader {
     pub fn open<P: AsRef<Path>>(dir: P) -> crate::Result<Self> {
         let dir = dir.as_ref().to_path_buf();
@@ -213,6 +372,7 @@ impl Reader {
         let instrument = resolve_instrument(device.as_ref(), &msscan);
         let analyzer = resolve_analyzer(device.as_ref(), &msscan);
         let start_timestamp = parse_acquired_time(&acq_data.join("Contents.xml"));
+        let calibrations = load_calibrations(&acq_data, &msscan, &bundle_name);
 
         Ok(Reader {
             dir,
@@ -224,9 +384,17 @@ impl Reader {
             instrument,
             analyzer,
             start_timestamp,
+            calibrations,
             profile_decode_failures: AtomicUsize::new(0),
             centroid_decode_failures: AtomicUsize::new(0),
         })
+    }
+
+    /// Q-TOF flight-time calibration for the scan at `index`, if one could
+    /// be loaded (see [`TofCalibration::source`] for where it came from).
+    /// Always `None` for QQQ bundles.
+    pub fn calibration(&self, index: usize) -> Option<&TofCalibration> {
+        self.calibrations.get(index).and_then(Option::as_ref)
     }
 
     /// Number of scans whose `MSProfile.bin` block could not be read or
@@ -338,20 +506,20 @@ impl SpectrumSource for Reader {
             // Try to read profile data first. Failures are counted and
             // logged (see `record_decode_failure`), then fall through to
             // centroid data.
+            let calibration = self.calibration(scan_idx);
             if let Some(params) = &rec.profile_params {
-                let decoded = crate::raw::read_bytes(
-                    &self.profile_path,
-                    params.offset,
-                    params.byte_count as usize,
-                )
-                .and_then(|bytes| {
-                    decode_profile_block(
-                        &bytes,
-                        params,
-                        rec.min_x.unwrap_or(0.0),
-                        rec.max_x.unwrap_or(0.0),
-                    )
-                });
+                let decoded = calibration
+                    .ok_or_else(|| {
+                        crate::Error::Parse("profile block has no mass calibration".into())
+                    })
+                    .and_then(|cal| {
+                        crate::raw::read_bytes(
+                            &self.profile_path,
+                            params.offset,
+                            params.byte_count as usize,
+                        )
+                        .and_then(|bytes| decode_profile_block(&bytes, params, cal))
+                    });
                 match decoded {
                     Ok(spec) => {
                         mz = spec.mz;
@@ -370,7 +538,7 @@ impl SpectrumSource for Reader {
                         params.offset,
                         params.byte_count as usize,
                     )
-                    .and_then(|bytes| decode_peak_block(&bytes, params));
+                    .and_then(|bytes| decode_peak_block(&bytes, params, calibration));
                     match decoded {
                         Ok(spec) => {
                             mz = spec.mz;
@@ -414,19 +582,8 @@ impl SpectrumSource for Reader {
                     }
                 }
             }
-            if let Some(v) = rec.unidentified_offset_36 {
-                // Raw stride-284 record offset 36 (Q-TOF only). Decoded but
-                // its meaning is unconfirmed - corpus comparison ruled out
-                // both TIC and base-peak m/z, so it's deliberately not
-                // mapped to `total_ion_current` or `base_peak_mz` below.
-                // Stashed here (rather than dropped) so downstream
-                // calibration work has the raw value without re-parsing
-                // MSScan.bin. See `ScanRecord::unidentified_offset_36` and
-                // `docs/format/01-msscan.md`.
-                extra.insert(
-                    "openaraw.msscan_offset36_unidentified".to_string(),
-                    v.to_string(),
-                );
+            if let Some(id) = rec.calibration_id {
+                extra.insert("openaraw.calibration_id".to_string(), id.to_string());
             }
 
             SpectrumRecord {
@@ -445,8 +602,8 @@ impl SpectrumSource for Reader {
                 analyzer: Some(analyzer),
                 filter: None,
                 retention_time_sec: rec.retention_time_min * 60.0,
-                total_ion_current: None,
-                base_peak_mz: None,
+                total_ion_current: rec.tic,
+                base_peak_mz: rec.base_peak_mz,
                 base_peak_intensity: rec.base_peak_intensity,
                 low_mz: rec.min_x,
                 high_mz: rec.max_x,
@@ -584,6 +741,7 @@ mod tests {
             instrument: CvTerm::new("MS:1000490", "Agilent instrument model"),
             analyzer: Analyzer::TOFMS,
             start_timestamp: None,
+            calibrations: Vec::new(),
             profile_decode_failures: AtomicUsize::new(0),
             centroid_decode_failures: AtomicUsize::new(0),
         }
@@ -609,8 +767,10 @@ mod tests {
             ms_level: 2,
             min_x: None,
             max_x: None,
+            tic: None,
+            base_peak_mz: None,
             base_peak_intensity: None,
-            unidentified_offset_36: None,
+            calibration_id: None,
             mrm_channel_id: None,
             target_mz: Some(500.25),
             collision_energy: Some(20.0),
@@ -639,8 +799,10 @@ mod tests {
             ms_level: 1,
             min_x: None,
             max_x: None,
+            tic: None,
+            base_peak_mz: None,
             base_peak_intensity: None,
-            unidentified_offset_36: None,
+            calibration_id: None,
             mrm_channel_id: None,
             target_mz: None,
             collision_energy: None,
@@ -657,15 +819,17 @@ mod tests {
     }
 
     #[test]
-    fn spectrum_exposes_instrument_reported_base_peak() {
+    fn spectrum_exposes_instrument_reported_summary_fields() {
         let record = ScanRecord {
             scan_id: 1,
             retention_time_min: 0.5,
             ms_level: 1,
             min_x: Some(100.0),
             max_x: Some(1_000.0),
+            tic: Some(2.5e7),
+            base_peak_mz: Some(513.9653233122384),
             base_peak_intensity: Some(1_572_319.625),
-            unidentified_offset_36: Some(513.9653233122384),
+            calibration_id: Some(1),
             mrm_channel_id: None,
             target_mz: None,
             collision_energy: None,
@@ -675,28 +839,27 @@ mod tests {
         let mut reader = reader_with_records(284, vec![record]);
 
         let spectrum = reader.iter_spectra().next().unwrap();
-        assert_eq!(spectrum.base_peak_mz, None);
+        assert_eq!(spectrum.base_peak_mz, Some(513.9653233122384));
         assert_eq!(spectrum.base_peak_intensity, Some(1_572_319.625));
-        assert_eq!(spectrum.total_ion_current, None);
-        // Offset 36's meaning isn't confirmed, so it isn't mapped to
-        // total_ion_current/base_peak_mz - it's stashed in `extra` instead
-        // (see Sigilweaver/OpenARaw#19).
+        assert_eq!(spectrum.total_ion_current, Some(2.5e7));
         assert_eq!(
-            spectrum.extra.get("openaraw.msscan_offset36_unidentified"),
-            Some(&"513.9653233122384".to_string())
+            spectrum.extra.get("openaraw.calibration_id"),
+            Some(&"1".to_string())
         );
     }
 
     #[test]
-    fn spectrum_extra_omits_offset_36_key_when_absent() {
+    fn spectrum_extra_is_empty_without_optional_fields() {
         let record = ScanRecord {
             scan_id: 1,
             retention_time_min: 0.5,
             ms_level: 1,
             min_x: None,
             max_x: None,
+            tic: None,
+            base_peak_mz: None,
             base_peak_intensity: None,
-            unidentified_offset_36: None,
+            calibration_id: None,
             mrm_channel_id: None,
             target_mz: None,
             collision_energy: None,
@@ -810,5 +973,191 @@ mod tests {
         assert_eq!(chroms.len(), 2);
         assert_eq!(chroms[0].intensity, vec![0.0]);
         assert_eq!(chroms[1].intensity, vec![0.0]);
+    }
+
+    /// Which calibration files [`synthetic_qtof_bundle`] writes. Both hold
+    /// the same `Traditional`-only calibration.
+    struct CalFiles {
+        masscal: bool,
+        default_xml: bool,
+    }
+
+    /// Write a minimal stride-284 Q-TOF bundle (`CalibrationID` 1) with one
+    /// scan carrying a profile block and a centroid block, plus the
+    /// calibration files selected by `files`. Returns the bundle directory.
+    fn synthetic_qtof_bundle(name: &str, files: CalFiles) -> PathBuf {
+        use byteorder::{ByteOrder, LittleEndian};
+        let dir = std::env::temp_dir().join(format!(
+            "openaraw-reader-test-{}-{name}.d",
+            std::process::id()
+        ));
+        let acq = dir.join("AcqData");
+        std::fs::create_dir_all(&acq).unwrap();
+        let encode = |data: &[u8]| -> Vec<u8> {
+            let mut out = Vec::new();
+            for chunk in data.chunks(32) {
+                out.push((chunk.len() - 1) as u8);
+                out.extend_from_slice(chunk);
+            }
+            out
+        };
+        let ref_cal = TofCalibration::traditional_only(3.47994641e-4, 12.5);
+
+        // Centroid: two flight times, then two intensities.
+        let mut peak = vec![0u8; 68];
+        for mz in [121.050873f64, 922.009798] {
+            peak.extend_from_slice(&ref_cal.flight_time(mz).to_le_bytes());
+        }
+        peak.extend_from_slice(&5.0f32.to_le_bytes());
+        peak.extend_from_slice(&7.0f32.to_le_bytes());
+        std::fs::write(acq.join("MSPeak.bin"), &peak).unwrap();
+
+        // Profile: x0, dx, three int32 intensities.
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&ref_cal.flight_time(500.0).to_le_bytes());
+        raw.extend_from_slice(&0.5f64.to_le_bytes());
+        for v in [1i32, 9, 2] {
+            raw.extend_from_slice(&v.to_le_bytes());
+        }
+        let mut profile = vec![0u8; 68];
+        let compressed = encode(&raw);
+        profile.extend_from_slice(&compressed);
+        std::fs::write(acq.join("MSProfile.bin"), &profile).unwrap();
+
+        let mut scan = vec![0u8; 92];
+        LittleEndian::write_u32(&mut scan[0..4], 257);
+        LittleEndian::write_u32(&mut scan[88..92], 92);
+        let mut r = vec![0u8; 284];
+        LittleEndian::write_u32(&mut r[0..4], 1);
+        LittleEndian::write_u16(&mut r[20..22], 1);
+        LittleEndian::write_f64(&mut r[28..36], 12.0);
+        LittleEndian::write_f64(&mut r[36..44], 922.009798);
+        LittleEndian::write_f64(&mut r[44..52], 7.0);
+        LittleEndian::write_i32(&mut r[52..56], 1);
+        LittleEndian::write_u32(&mut r[156..160], 1);
+        LittleEndian::write_u64(&mut r[160..168], 68);
+        LittleEndian::write_u32(&mut r[168..172], compressed.len() as u32);
+        LittleEndian::write_u32(&mut r[172..176], 3);
+        LittleEndian::write_u32(&mut r[176..180], raw.len() as u32);
+        LittleEndian::write_u32(&mut r[220..224], 2);
+        LittleEndian::write_u64(&mut r[224..232], 68);
+        LittleEndian::write_u32(&mut r[232..236], 24);
+        LittleEndian::write_u32(&mut r[236..240], 2);
+        scan.extend(r);
+        std::fs::write(acq.join("MSScan.bin"), &scan).unwrap();
+
+        if files.masscal {
+            let mut bytes = vec![0u8; 72];
+            let mut rec = vec![0u8; 84];
+            LittleEndian::write_u32(&mut rec[0..4], 10);
+            LittleEndian::write_f64(&mut rec[4..12], ref_cal.a);
+            LittleEndian::write_f64(&mut rec[12..20], ref_cal.t0);
+            bytes.extend(rec);
+            std::fs::write(acq.join("MSMassCal.bin"), &bytes).unwrap();
+        }
+        if files.default_xml {
+            let mut poly = String::new();
+            for n in 1..=8 {
+                poly.push_str(&format!("<Value Number=\"{n}\">0</Value>"));
+            }
+            let xml = format!(
+                "<DefaultMassCalibration><DefaultCalibrations>\
+                 <DefaultCalibration DefaultCalibrationID=\"1\">\
+                 <Step Number=\"1\"><CalibrationFormula>Traditional</CalibrationFormula>\
+                 <NumberOfCoefficients>2</NumberOfCoefficients><ValueUseFlags>0</ValueUseFlags>\
+                 <Values><Value Number=\"1\">{:E}</Value><Value Number=\"2\">{:E}</Value></Values></Step>\
+                 <Step Number=\"2\"><CalibrationFormula>Polynomial</CalibrationFormula>\
+                 <NumberOfCoefficients>8</NumberOfCoefficients><ValueUseFlags>0</ValueUseFlags>\
+                 <Values>{poly}</Values></Step>\
+                 </DefaultCalibration></DefaultCalibrations></DefaultMassCalibration>",
+                ref_cal.a, ref_cal.t0
+            );
+            std::fs::write(acq.join("DefaultMassCal.xml"), xml).unwrap();
+        }
+        dir
+    }
+
+    fn assert_calibrated(reader: &mut Reader) {
+        let spectrum = reader.iter_spectra().next().unwrap();
+        assert_eq!(spectrum.scan_mode, Some(ScanMode::Profile));
+        assert_eq!(spectrum.intensity, vec![1.0, 9.0, 2.0]);
+        assert!((spectrum.mz[0] - 500.0).abs() < 1e-9);
+        assert!(spectrum.mz.windows(2).all(|w| w[0] < w[1]));
+        assert_eq!(spectrum.total_ion_current, Some(12.0));
+        assert_eq!(spectrum.base_peak_mz, Some(922.009798));
+        assert_eq!(reader.profile_decode_failures(), 0);
+
+        // Centroid path, exercised by dropping the profile block.
+        reader.msscan.records[0].profile_params = None;
+        let spectrum = reader.iter_spectra().next().unwrap();
+        assert_eq!(spectrum.scan_mode, Some(ScanMode::Centroid));
+        assert!((spectrum.mz[0] - 121.050873).abs() < 1e-9);
+        assert!((spectrum.mz[1] - 922.009798).abs() < 1e-9);
+        assert_eq!(reader.centroid_decode_failures(), 0);
+    }
+
+    fn assert_uncalibrated(reader: &mut Reader) {
+        assert_eq!(reader.calibration(0), None);
+        let spectrum = reader.iter_spectra().next().unwrap();
+        assert!(spectrum.mz.is_empty());
+        assert!(spectrum.intensity.is_empty());
+        assert_eq!(reader.profile_decode_failures(), 1);
+        assert_eq!(reader.centroid_decode_failures(), 1);
+    }
+
+    #[test]
+    fn qtof_uses_msmasscal_record_with_flags_from_default_xml() {
+        let files = CalFiles {
+            masscal: true,
+            default_xml: true,
+        };
+        let dir = synthetic_qtof_bundle("masscal", files);
+        let mut reader = Reader::open(&dir).unwrap();
+        let cal = reader.calibration(0).unwrap();
+        assert_eq!(cal.source, CalibrationSource::MassCalRecord);
+        assert_calibrated(&mut reader);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn qtof_falls_back_to_default_xml_without_msmasscal() {
+        let files = CalFiles {
+            masscal: false,
+            default_xml: true,
+        };
+        let dir = synthetic_qtof_bundle("xml-only", files);
+        let mut reader = Reader::open(&dir).unwrap();
+        let cal = reader.calibration(0).unwrap();
+        assert_eq!(cal.source, CalibrationSource::DefaultMassCal);
+        assert_calibrated(&mut reader);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn qtof_record_with_zero_polynomial_needs_no_xml() {
+        let files = CalFiles {
+            masscal: true,
+            default_xml: false,
+        };
+        let dir = synthetic_qtof_bundle("masscal-only", files);
+        let mut reader = Reader::open(&dir).unwrap();
+        assert_eq!(
+            reader.calibration(0).unwrap().source,
+            CalibrationSource::MassCalRecord
+        );
+        assert_calibrated(&mut reader);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn qtof_without_calibration_counts_failures_instead_of_reporting_flight_times() {
+        let files = CalFiles {
+            masscal: false,
+            default_xml: false,
+        };
+        let dir = synthetic_qtof_bundle("uncalibrated", files);
+        let mut reader = Reader::open(&dir).unwrap();
+        assert_uncalibrated(&mut reader);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

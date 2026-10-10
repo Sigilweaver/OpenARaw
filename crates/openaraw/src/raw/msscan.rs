@@ -19,17 +19,17 @@ pub struct ScanRecord {
     pub ms_level: u32,
     pub min_x: Option<f64>,
     pub max_x: Option<f64>,
-    /// Instrument-reported base-peak intensity (record offset 44, f64).
-    /// Confirmed for stride-284 Q-TOF records only.
+    /// Instrument-reported total ion current (`TIC`, record offset 28,
+    /// f64). Q-TOF records only.
+    pub tic: Option<f64>,
+    /// Instrument-reported base-peak m/z (`BasePeakMZ`, record offset 36,
+    /// f64). Q-TOF records only.
+    pub base_peak_mz: Option<f64>,
+    /// Instrument-reported base-peak intensity (`BasePeakValue`, record
+    /// offset 44, f64). Q-TOF records only.
     pub base_peak_intensity: Option<f64>,
-    /// Raw value at record offset 36 (f64), decoded for stride-284 Q-TOF
-    /// records but of unconfirmed meaning. Corpus comparison (PXD001310)
-    /// ruled out both decoded TIC (sum of intensities) and the m/z of the
-    /// max-intensity centroid point - the values are in a plausible m/z-like
-    /// range (~400-600 for this corpus) but don't match either quantity.
-    /// Intentionally not mapped to `total_ion_current` or `base_peak_mz` in
-    /// `reader.rs`; see `docs/format/01-msscan.md` and Sigilweaver/OpenARaw#19.
-    pub unidentified_offset_36: Option<f64>,
+    /// `CalibrationID` (record offset 52, int32). Q-TOF records only.
+    pub calibration_id: Option<i32>,
     pub mrm_channel_id: Option<u32>,
     pub target_mz: Option<f64>,
     /// Precursor collision energy in eV (record offset 76, f64). Confirmed
@@ -38,6 +38,11 @@ pub struct ScanRecord {
     pub collision_energy: Option<f64>,
     pub profile_params: Option<SpectrumParams>,
     pub centroid_params: Option<SpectrumParams>,
+}
+
+/// Record strides of Q-TOF acquisitions (see `docs/format/01-msscan.md`).
+pub fn is_qtof_stride(stride: u32) -> bool {
+    matches!(stride, 216 | 220 | 284)
 }
 
 #[derive(Debug, Clone)]
@@ -139,11 +144,20 @@ impl MSScan {
 
             let mut min_x = None;
             let mut max_x = None;
+            let mut tic = None;
+            let mut base_peak_mz = None;
             let mut base_peak_intensity = None;
-            let mut unidentified_offset_36 = None;
-            if stride >= 284 {
-                unidentified_offset_36 = Some(LittleEndian::read_f64(&record_bytes[36..44]));
+            let mut calibration_id = None;
+            // Field order from the bundle's MSScan.xsd ScanRecord: ScanID,
+            // ScanMethodID, TimeSegmentID, ScanTime, MSLevel, ScanType, TIC
+            // (28), BasePeakMZ (36), BasePeakValue (44), CalibrationID (52).
+            if is_qtof_stride(stride) {
+                tic = Some(LittleEndian::read_f64(&record_bytes[28..36]));
+                base_peak_mz = Some(LittleEndian::read_f64(&record_bytes[36..44]));
                 base_peak_intensity = Some(LittleEndian::read_f64(&record_bytes[44..52]));
+                calibration_id = Some(LittleEndian::read_i32(&record_bytes[52..56]));
+            }
+            if stride >= 284 {
                 min_x = Some(LittleEndian::read_f64(&record_bytes[244..252]));
                 max_x = Some(LittleEndian::read_f64(&record_bytes[252..260]));
             }
@@ -221,8 +235,10 @@ impl MSScan {
                 ms_level,
                 min_x,
                 max_x,
+                tic,
+                base_peak_mz,
                 base_peak_intensity,
-                unidentified_offset_36,
+                calibration_id,
                 mrm_channel_id,
                 target_mz,
                 collision_energy,
@@ -307,43 +323,38 @@ mod tests {
     }
 
     #[test]
-    fn parses_stride_284_base_peak_intensity() {
-        let mut bytes = header();
-        let mut r = record(284, 1, 1);
-        LittleEndian::write_f64(&mut r[44..52], 1_572_319.625);
-        bytes.extend(r);
+    fn parses_qtof_summary_fields() {
+        for &stride in &[284u32, 220, 216] {
+            let mut bytes = header();
+            let mut r = record(stride as usize, 1, 1);
+            LittleEndian::write_f64(&mut r[28..36], 2.5e7);
+            LittleEndian::write_f64(&mut r[36..44], 513.9653233122384);
+            LittleEndian::write_f64(&mut r[44..52], 1_572_319.625);
+            LittleEndian::write_i32(&mut r[52..56], 3);
+            bytes.extend(r);
 
-        let scan = MSScan::from_bytes(&bytes).unwrap();
-        assert_eq!(scan.records[0].base_peak_intensity, Some(1_572_319.625));
-    }
-
-    #[test]
-    fn leaves_base_peak_intensity_absent_for_other_strides() {
-        for &stride in &[220u32, 216, 196, 186] {
-            let scan = MSScan::from_bytes(&msscan_bytes(stride, &[(1, 1)])).unwrap();
-            assert_eq!(scan.records[0].base_peak_intensity, None);
+            let rec = &MSScan::from_bytes(&bytes).unwrap().records[0];
+            assert_eq!(rec.tic, Some(2.5e7), "stride {stride}");
+            assert_eq!(rec.base_peak_mz, Some(513.9653233122384), "stride {stride}");
+            assert_eq!(
+                rec.base_peak_intensity,
+                Some(1_572_319.625),
+                "stride {stride}"
+            );
+            assert_eq!(rec.calibration_id, Some(3), "stride {stride}");
         }
     }
 
     #[test]
-    fn parses_stride_284_unidentified_offset_36() {
-        let mut bytes = header();
-        let mut r = record(284, 1, 1);
-        LittleEndian::write_f64(&mut r[36..44], 513.9653233122384);
-        bytes.extend(r);
-
-        let scan = MSScan::from_bytes(&bytes).unwrap();
-        assert_eq!(
-            scan.records[0].unidentified_offset_36,
-            Some(513.9653233122384)
-        );
-    }
-
-    #[test]
-    fn leaves_unidentified_offset_36_absent_for_other_strides() {
-        for &stride in &[220u32, 216, 196, 186] {
-            let scan = MSScan::from_bytes(&msscan_bytes(stride, &[(1, 1)])).unwrap();
-            assert_eq!(scan.records[0].unidentified_offset_36, None);
+    fn leaves_qtof_summary_fields_absent_for_qqq_strides() {
+        for &stride in &[196u32, 186] {
+            let rec = &MSScan::from_bytes(&msscan_bytes(stride, &[(1, 1)]))
+                .unwrap()
+                .records[0];
+            assert_eq!(rec.tic, None);
+            assert_eq!(rec.base_peak_mz, None);
+            assert_eq!(rec.base_peak_intensity, None);
+            assert_eq!(rec.calibration_id, None);
         }
     }
 
@@ -353,12 +364,11 @@ mod tests {
     /// `OPENARAW_CORPUS` is unset. If `OPENARAW_CORPUS` is set but the
     /// bundle is missing, it fails rather than skipping.
     /// Exercises the real stride-284 record bytes (PXD001310, per
-    /// `docs/format/01-msscan.md`'s validated corpus table and
-    /// Sigilweaver/OpenARaw#19) to confirm offset 36 decodes to a sensible
-    /// finite value rather than only ever being checked against synthetic
-    /// buffers.
+    /// `docs/format/01-msscan.md`'s validated corpus table) to confirm the
+    /// summary fields decode to sensible values rather than only ever being
+    /// checked against synthetic buffers.
     #[test]
-    fn stride_284_offsets_36_and_44_decode_from_real_corpus() {
+    fn stride_284_summary_fields_decode_from_real_corpus() {
         let Some(root) = std::env::var_os("OPENARAW_CORPUS") else {
             eprintln!("skip: OPENARAW_CORPUS not set");
             return;
@@ -376,27 +386,22 @@ mod tests {
         assert!(!scan.records.is_empty());
 
         for rec in &scan.records {
-            let v36 = rec
-                .unidentified_offset_36
-                .expect("offset 36 decoded for stride 284");
-            let v44 = rec
+            let tic = rec.tic.expect("TIC decoded for stride 284");
+            let bp_mz = rec.base_peak_mz.expect("BasePeakMZ decoded for stride 284");
+            let bp_int = rec
                 .base_peak_intensity
-                .expect("offset 44 decoded for stride 284");
-            assert!(v36.is_finite(), "offset 36 should be a finite double");
-            assert!(v44.is_finite(), "offset 44 should be a finite double");
-            // The two offsets are documented as distinct quantities (see
-            // docs/format/01-msscan.md) - confirm the fixture doesn't
-            // regress to reading the same bytes for both.
-            assert_ne!(v36, v44);
+                .expect("BasePeakValue decoded for stride 284");
+            assert!(
+                tic.is_finite() && tic >= bp_int,
+                "TIC {tic} < base peak {bp_int}"
+            );
+            assert!(bp_mz.is_finite() && bp_mz >= 0.0);
         }
 
         // Spot-check the first record's exact value to catch an accidental
         // offset shift, not just "some finite number".
         assert_eq!(scan.records[0].scan_id, 2271);
-        assert_eq!(
-            scan.records[0].unidentified_offset_36,
-            Some(513.9653233122384)
-        );
+        assert_eq!(scan.records[0].base_peak_mz, Some(513.9653233122384));
         assert_eq!(scan.records[0].base_peak_intensity, Some(1_572_319.625));
     }
 

@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::{mpsc, Mutex};
 
+use ::openaraw::raw::calibration::CalibrationSource;
 use ::openaraw::reader::Reader;
 use openmassspec_core::{
     Activation, Analyzer, ChromatogramRecord, CvTerm, MobilityArrayKind, Polarity, PrecursorInfo,
@@ -47,6 +48,13 @@ fn polarity_str(p: Polarity) -> &'static str {
     match p {
         Polarity::Positive => "positive",
         Polarity::Negative => "negative",
+    }
+}
+
+fn calibration_source_str(s: CalibrationSource) -> &'static str {
+    match s {
+        CalibrationSource::MassCalRecord => "mass_cal_record",
+        CalibrationSource::DefaultMassCal => "default_mass_cal",
     }
 }
 
@@ -350,14 +358,23 @@ impl RawReader {
         out.set_item("global_header_size", self.reader.msscan.global_header_size)?;
         out.set_item("stride", self.reader.msscan.stride)?;
         let records = PyList::empty(py);
-        for r in &self.reader.msscan.records {
+        for (i, r) in self.reader.msscan.records.iter().enumerate() {
             let d = PyDict::new(py);
             d.set_item("scan_id", r.scan_id)?;
             d.set_item("retention_time_min", r.retention_time_min)?;
             d.set_item("ms_level", r.ms_level)?;
             d.set_item("min_x", r.min_x)?;
             d.set_item("max_x", r.max_x)?;
+            d.set_item("tic", r.tic)?;
+            d.set_item("base_peak_mz", r.base_peak_mz)?;
             d.set_item("base_peak_intensity", r.base_peak_intensity)?;
+            d.set_item("calibration_id", r.calibration_id)?;
+            d.set_item(
+                "calibration_source",
+                self.reader
+                    .calibration(i)
+                    .map(|c| calibration_source_str(c.source)),
+            )?;
             d.set_item("mrm_channel_id", r.mrm_channel_id)?;
             d.set_item("target_mz", r.target_mz)?;
             d.set_item("collision_energy", r.collision_energy)?;
