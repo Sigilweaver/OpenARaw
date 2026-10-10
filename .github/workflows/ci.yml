@@ -84,9 +84,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$CORPUS_DIR"
-          curl -sSL --user-agent "OpenARaw-CI/1.0" -o "$CORPUS_DIR/$CORPUS_DZIP_NAME" "$PRIDE_DZIP_URL"
+          curl -fsSL --retry 3 --user-agent "OpenARaw-CI/1.0" -o "$CORPUS_DIR/$CORPUS_DZIP_NAME" "$PRIDE_DZIP_URL"
           echo "Downloaded $(du -sh "$CORPUS_DIR/$CORPUS_DZIP_NAME" | cut -f1) QQQ corpus fixture archive"
-          curl -sSL --user-agent "OpenARaw-CI/1.0" -o "$CORPUS_DIR/$CORPUS_DZIP_NAME_QTOF" "$PRIDE_DZIP_URL_QTOF"
+          curl -fsSL --retry 3 --user-agent "OpenARaw-CI/1.0" -o "$CORPUS_DIR/$CORPUS_DZIP_NAME_QTOF" "$PRIDE_DZIP_URL_QTOF"
           echo "Downloaded $(du -sh "$CORPUS_DIR/$CORPUS_DZIP_NAME_QTOF" | cut -f1) QTOF corpus fixture archive"
 
       - name: Extract corpus fixtures (Unix)
@@ -104,6 +104,10 @@ jobs:
           Expand-Archive -Path "$env:CORPUS_DIR/$env:CORPUS_DZIP_NAME_QTOF" -DestinationPath "$env:CORPUS_DIR"
 
       - name: cargo test
+        # Fixtures were downloaded above, so a missing one is a failure,
+        # not a skip.
+        env:
+          REQUIRE_CORPUS: "1"
         run: cargo test --workspace --all-targets
 
       - name: Python binding parity
@@ -112,7 +116,7 @@ jobs:
           python3 -m venv .venv
           .venv/bin/python -m pip install 'maturin>=1.5,<2' pytest
           VIRTUAL_ENV="$PWD/.venv" .venv/bin/maturin develop --release
-          OPENARAW_TEST_BUNDLE=corpus/180814-Sample19.d .venv/bin/python -m pytest tests/test_bindings.py -v
+          REQUIRE_CORPUS=1 OPENARAW_TEST_BUNDLE=corpus/180814-Sample19.d .venv/bin/python -m pytest tests/test_bindings.py -v
 
   docs:
     name: Docs (Docusaurus)

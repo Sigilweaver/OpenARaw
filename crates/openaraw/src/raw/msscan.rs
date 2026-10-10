@@ -348,9 +348,10 @@ mod tests {
     }
 
     /// Corpus files live out of tree (large real-world acquisitions, not
-    /// checked into the repo - see the fixture pattern in
-    /// `crates/openaraw/tests/conformance.rs`), so this test skips cleanly
-    /// when the fixture isn't present locally instead of failing the build.
+    /// checked into the repo). This fixture is only in the full research
+    /// corpus, not in CI's downloaded fixtures, so the test skips when
+    /// `OPENARAW_CORPUS` is unset. If `OPENARAW_CORPUS` is set but the
+    /// bundle is missing, it fails rather than skipping.
     /// Exercises the real stride-284 record bytes (PXD001310, per
     /// `docs/format/01-msscan.md`'s validated corpus table and
     /// Sigilweaver/OpenARaw#19) to confirm offset 36 decodes to a sensible
@@ -358,15 +359,19 @@ mod tests {
     /// buffers.
     #[test]
     fn stride_284_offsets_36_and_44_decode_from_real_corpus() {
-        let path = std::path::Path::new(
-            "/workspaces/Projects/Data/ARaw/PXD001310/2013-02-26-001 EF CR DMSO 60m r1.d/AcqData/MSScan.bin",
-        );
-        if !path.exists() {
-            eprintln!("skip: no PXD001310 corpus fixture available");
+        let Some(root) = std::env::var_os("OPENARAW_CORPUS") else {
+            eprintln!("skip: OPENARAW_CORPUS not set");
             return;
-        }
+        };
+        let path = std::path::Path::new(&root)
+            .join("PXD001310/2013-02-26-001 EF CR DMSO 60m r1.d/AcqData/MSScan.bin");
+        assert!(
+            path.exists(),
+            "OPENARAW_CORPUS is set but {} is missing",
+            path.display()
+        );
 
-        let scan = MSScan::from_path(path).expect("parse real PXD001310 MSScan.bin");
+        let scan = MSScan::from_path(&path).expect("parse real PXD001310 MSScan.bin");
         assert_eq!(scan.stride, 284);
         assert!(!scan.records.is_empty());
 
