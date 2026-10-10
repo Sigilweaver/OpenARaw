@@ -88,7 +88,7 @@ impl MSScan {
             );
             for s in possible_strides.iter() {
                 let s_val = *s as usize;
-                if payload_len % s_val == 0 {
+                if payload_len.is_multiple_of(s_val) {
                     if payload_len == s_val {
                         stride = *s;
                         break;
