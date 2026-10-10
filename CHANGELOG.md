@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Known issues
+
+- Q-TOF m/z values are incorrect in 0.2.0 and earlier: centroid
+  x-values are uncalibrated flight times and are reported without the
+  bundle's mass calibration. Profile spectra are never emitted (profile
+  blocks fail to decode and fall back to centroid). QQQ MRM data is
+  unaffected. A fix is in progress; see README "Known issues".
+
+### Added
+
+- `Reader::profile_decode_failures()` and
+  `Reader::centroid_decode_failures()` count spectrum payload blocks that
+  failed to read or decode. Failures are logged through the `log` crate
+  (first per kind at warn, the rest at debug) instead of being dropped
+  silently. New dependency: `log` 0.4.
+- `OPENARAW_CORPUS` and `REQUIRE_CORPUS=1` environment variables for
+  corpus-backed tests and the `corpus_scan` example, replacing hardcoded
+  `/workspaces/...` paths. CI now fails if a downloaded fixture is
+  missing instead of skipping.
+
+### Changed
+
+- Minimum supported Rust version is now 1.88, matching
+  `openmassspec-core` 2.0.0.
+
+### Removed
+
+- Unused public `reader::DecodedSpectrum` enum. Technically a breaking
+  API removal; nothing constructed or consumed it.
+
+### Fixed
+
+- `RunMetadata` now reports `MS:1001509` (Agilent MassHunter format) and
+  `MS:1001508` (Agilent MassHunter nativeID format). It previously used
+  `MS:1002846` and `MS:1002848`, which are PRIDE file-URI terms.
+- Q-TOF MS2 `precursor_native_id` no longer points at the spectrum's own
+  scan; it is `None` until the parent scan (DDScanID) is decoded.
+- `MSScan.bin` stride detection no longer overflows when the first
+  ScanID is near `u32::MAX`.
+- Docs: `IonPolarity` is at `MSScan.bin` record offset 64 per the
+  bundle's `MSScan.xsd`, corroborated on PXD031771. The previous "not
+  recoverable" statement was wrong. Polarity is not yet populated.
+
 ## [0.2.0] - 2026-09-28
 
 ### Added
