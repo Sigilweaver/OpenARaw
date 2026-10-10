@@ -6,7 +6,7 @@ sidebar_position: 4
 
 Binary payload file containing centroid (peak) mass spectra. Present in both QQQ and Q-TOF acquisitions. Each scan's data block is located via `SpectrumOffset` and `ByteCount` from the corresponding `MSScan.bin` scan record.
 
-## Status: Confirmed
+## Status: Incorrect for Q-TOF; see Known issues
 
 ## File Layout
 
