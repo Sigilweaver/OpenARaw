@@ -18,9 +18,9 @@ automatically selected precursors.
 - `analyzer` on yielded spectra is `Analyzer::TOFMS`.
 - MS2 spectra carry a real `target_mz` precursor - see
   [Scan data](./scan-data).
-- `MSMassCal.bin` is present, holding per-scan calibration coefficient
-  traceability (already applied upstream - see
-  [MSMassCal.bin](../format/msmasscal)).
+- `MSMassCal.bin` (per-scan calibration) and `DefaultMassCal.xml`
+  (default calibration) convert flight times to m/z. Some bundles have
+  only `DefaultMassCal.xml` - see [MSMassCal.bin](../format/msmasscal).
 
 ## QQQ
 
@@ -34,8 +34,8 @@ the run.
   in the Q-TOF sense, so precursor identity is carried as
   `precursor_native_id` (`mrm_channel=<id>`) instead - see
   [Scan data](./scan-data).
-- `MSMassCal.bin` is absent - QQQ instruments don't use TOF-style dynamic
-  mass recalibration.
+- `MSMassCal.bin` and `DefaultMassCal.xml` are absent: QQQ m/z is stored
+  directly, with no flight-time calibration.
 
 ## How the reader tells them apart
 

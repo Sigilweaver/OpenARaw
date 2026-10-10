@@ -37,7 +37,7 @@ Optional Python bindings are available via the
 | `MSPeak.bin` (centroid/MRM peak data)         | supported |
 | `MSProfile.bin` (profile-mode data, LZF)      | supported |
 | `MSPeriodicActuals.bin` (instrument telemetry)| documented, not yet exposed via the reader API |
-| `MSMassCal.bin` (calibration traceability)    | documented, not required for reading spectra |
+| `MSMassCal.bin` / `DefaultMassCal.xml` (Q-TOF calibration) | supported |
 | Q-TOF Auto-MS/MS precursor m/z                | supported |
 | QQQ MRM precursor mapping                     | supported |
 

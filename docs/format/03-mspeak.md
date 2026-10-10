@@ -2,9 +2,9 @@
 
 Binary payload file containing centroid (peak) mass spectra. Present in both QQQ and Q-TOF acquisitions. Each scan's data block is located via `SpectrumOffset` and `ByteCount` from the corresponding `MSScan.bin` scan record.
 
-## Status: Incorrect for Q-TOF; see Known issues
+## Status: Confirmed
 
-The Q-TOF (FormatID=2) section below is wrong: the stored x-values are uncalibrated flight times, not m/z x 100, and must be converted with the bundle's mass calibration (see `05-msmasscal.md`). The QQQ (FormatID=3) section is correct. See `06-known-limitations.md` section 4.
+QQQ (FormatID=3) blocks store m/z directly. Q-TOF (FormatID=2) x-values are flight times, converted to m/z with the scan's mass calibration (see `05-msmasscal.md`); the result reproduces the `BasePeakMZ` stored in `MSScan.bin` across the corpus.
 
 ## File Layout
 
@@ -27,15 +27,14 @@ The encoding inside each block differs between QQQ and Q-TOF.
 - A block of N points is NOT stored as N interleaved (mz, intensity) tuples.
 - Layout: `N * double mz_raw (8 bytes each)`, immediately followed by `N * float intensity (4 bytes each)`.
 - Total block size: `N * 8 + N * 4 = N * 12`, matching `ByteCount`.
-- **mz encoding:** `mz_raw` values are stored as 100x the real, fully-calibrated m/z in Da (retaining full double-precision floating point accuracy). Divide by 100.0 to get the final Da value. 
-  - *Note:* The calibration parameters in `MSMassCal.bin` are already applied to these values upstream by the instrument's acquisition software before they are written to disk. No further calibration math is required.
-  - Verified across PXD001310 and PXD004426 by confirming that `mz_raw / 100.0` falls within the scan's `MinX`/`MaxX` bounds.
+- **x encoding:** the first array holds flight times, not m/z. They are converted per scan with the calibration in `05-msmasscal.md` (`Traditional` step minus the clamped `Polynomial` step), from the scan's `MSMassCal.bin` record or, without one, `DefaultMassCal.xml`.
+  - The reader never reports Q-TOF x-values as m/z without a calibration: a block for a scan without one is a counted decode failure (`Reader::centroid_decode_failures()`).
 - MS2 scan centroid ions may fall outside the MinX/MaxX of the precursor scan (expected; those bounds describe the Q1/profile scan range, not the fragment window).
 - Confirmed SoA on two independent Q-TOF files:
-  - PXD001310 scan 1: N=1258, block=15096 bytes (10064 + 5032). `mz_raw` values strictly follow double-precision fractionals (e.g., `29888.4237296802` -> `298.88423730` Da).
-  - PXD004426 scan 1: N=15, block=180 bytes (120 + 60). `mz_raw` range: 50767-101587 -> Da: 507.7-1015.9.
+  - PXD001310 scan 1: N=1258, block=15096 bytes (10064 + 5032). Example x-value: `29888.4237296802`.
+  - PXD004426 scan 1: N=15, block=180 bytes (120 + 60). x range: 50767-101587.
 - Intensities are positive and non-zero for all non-baseline peaks (verified).
 
 ## Unresolved
 
-- Whether Q-TOF files from instruments other than G6550A/G6540B use the same 100x mz scale.
+- None for the layouts above.

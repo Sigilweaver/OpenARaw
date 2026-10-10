@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+This release changes the public Rust API (see Changed and Removed) and
+ships as 0.3.0.
+
 ### Added
 
 - `Reader::profile_decode_failures()` and
@@ -14,6 +17,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failed to read or decode. Failures are logged through the `log` crate
   (first per kind at warn, the rest at debug) instead of being dropped
   silently. New dependency: `log` 0.4.
+- Q-TOF flight-time calibration. Centroid x-values and the profile axis
+  are converted with `m/z = (A * (t - T0))^2 - P(clamp(t, t_min, t_max))`,
+  where the `Polynomial` step's powers are the set bits of its
+  `ValueUseFlags` in `DefaultMassCal.xml`. Each scan uses its own
+  `MSMassCal.bin` record, or the `DefaultMassCal.xml` entry for its
+  `CalibrationID` when the bundle has no `MSMassCal.bin` (35 of 224
+  corpus Q-TOF bundles). Reproduces the stored `BasePeakMZ` across the
+  corpus. New public items: `raw::calibration` (`TofCalibration`,
+  `PolynomialStep`, `CalibrationSource`), `raw::defaultmasscal`,
+  `raw::msmasscal::parse_bytes`, `raw::msscan::is_qtof_stride`,
+  `raw::msprofile::ProfileAxis`, `Reader::calibration()`.
+- `ScanRecord::tic`, `ScanRecord::base_peak_mz` and
+  `ScanRecord::calibration_id` (`MSScan.bin` offsets 28, 36, 52) for
+  Q-TOF records; spectra now carry `total_ion_current` and
+  `base_peak_mz`, and `extra["openaraw.calibration_id"]`. The Python
+  `scan_index()` records expose the same fields plus
+  `calibration_source`.
+- `qtof_calibration_check` example and corpus test
+  (`tests/qtof_calibration.rs`) measuring decoded base peak m/z against
+  the stored `BasePeakMZ` (median / p95 ppm), summed intensity against
+  `TIC`, and reference-mass ions.
 - `OPENARAW_CORPUS` and `REQUIRE_CORPUS=1` environment variables for
   corpus-backed tests and the `corpus_scan` example, replacing hardcoded
   `/workspaces/...` paths. CI now fails if a downloaded fixture is
@@ -21,16 +45,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Breaking: `raw::mspeak::decode_peak_block` takes an
+  `Option<&TofCalibration>` (required for Q-TOF blocks), and
+  `raw::msprofile::decode_profile_block` takes a `&TofCalibration`
+  instead of `min_x` / `max_x`.
+- Breaking: `raw::msscan::ScanRecord` has new public fields (`tic`,
+  `base_peak_mz`, `calibration_id`), so struct literals must set them.
+- Breaking: `raw::msmasscal::parse` returns an error for a file shorter
+  than its header, a partial trailing record or an oversized coefficient
+  count, instead of an empty or truncated list.
 - Minimum supported Rust version is now 1.88, matching
   `openmassspec-core` 2.0.0.
 
 ### Removed
 
+- Breaking: `ScanRecord::unidentified_offset_36` and the
+  `openaraw.msscan_offset36_unidentified` spectrum extra; the value is
+  now `ScanRecord::base_peak_mz`.
 - Unused public `reader::DecodedSpectrum` enum. Technically a breaking
   API removal; nothing constructed or consumed it.
 
 ### Fixed
 
+- Q-TOF centroid m/z is no longer the raw flight time divided by 100,
+  and Q-TOF payloads without a usable calibration are counted as decode
+  failures instead of being reported as m/z.
+- Profile blocks: the LZF stream starts at byte 0 of the block and
+  decompresses to an `f64` start time and `f64` sampling period followed
+  by the intensities; the old 16-byte-preamble layout failed on every
+  real block.
 - `RunMetadata` now reports `MS:1001509` (Agilent MassHunter format) and
   `MS:1001508` (Agilent MassHunter nativeID format). It previously used
   `MS:1002846` and `MS:1002848`, which are PRIDE file-URI terms.
@@ -46,6 +89,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was not recoverable.
 - Docs: README "Known issues" and format doc status lines for Q-TOF m/z
   and profile decoding, which the docs marked as confirmed.
+- Docs: `MSPeak.bin` Q-TOF x-values are flight times (not `m/z * 100`),
+  `MSMassCal.bin` coefficients are not pre-applied, the `MSProfile.bin`
+  block layout is corrected, `MSScan.bin` offsets 28/36/52 are
+  `TIC`/`BasePeakMZ`/`CalibrationID`, and the calibration formula and
+  `DefaultMassCal.xml` layout are documented.
 
 ## [0.2.0] - 2026-09-28
 
@@ -57,6 +105,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Breaking: `raw::mspeak::decode_peak_block` takes an
+  `Option<&TofCalibration>` (required for Q-TOF blocks), and
+  `raw::msprofile::decode_profile_block` takes a `&TofCalibration`
+  instead of `min_x` / `max_x`.
+- Breaking: `raw::msscan::ScanRecord` has new public fields (`tic`,
+  `base_peak_mz`, `calibration_id`), so struct literals must set them.
+- Breaking: `raw::msmasscal::parse` returns an error for a file shorter
+  than its header, a partial trailing record or an oversized coefficient
+  count, instead of an empty or truncated list.
 - Adopts `openmassspec-core` 2.0.0 (arrow 60). Rust users building against
   core 1.x must upgrade core too.
 
@@ -75,6 +132,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Breaking: `raw::mspeak::decode_peak_block` takes an
+  `Option<&TofCalibration>` (required for Q-TOF blocks), and
+  `raw::msprofile::decode_profile_block` takes a `&TofCalibration`
+  instead of `min_x` / `max_x`.
+- Breaking: `raw::msscan::ScanRecord` has new public fields (`tic`,
+  `base_peak_mz`, `calibration_id`), so struct literals must set them.
+- Breaking: `raw::msmasscal::parse` returns an error for a file shorter
+  than its header, a partial trailing record or an oversized coefficient
+  count, instead of an empty or truncated list.
 - Adopt `openmassspec-core` 1.5.0. The new `SpectrumRecord`/`RunMetadata`
   `extra` and `acquisition_event_id` fields are defaulted (empty / `None`);
   no field is populated yet, so output is unchanged.
@@ -241,6 +307,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Breaking: `raw::mspeak::decode_peak_block` takes an
+  `Option<&TofCalibration>` (required for Q-TOF blocks), and
+  `raw::msprofile::decode_profile_block` takes a `&TofCalibration`
+  instead of `min_x` / `max_x`.
+- Breaking: `raw::msscan::ScanRecord` has new public fields (`tic`,
+  `base_peak_mz`, `calibration_id`), so struct literals must set them.
+- Breaking: `raw::msmasscal::parse` returns an error for a file shorter
+  than its header, a partial trailing record or an oversized coefficient
+  count, instead of an empty or truncated list.
 - `crates/openaraw/src/raw/msperiodicactuals.rs`'s `parse()` no longer
   unconditionally returns an empty `Vec`. It now decodes the confirmed
   68-byte header / 20-byte record layout (see
