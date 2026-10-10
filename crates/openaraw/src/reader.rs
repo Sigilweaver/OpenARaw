@@ -366,10 +366,9 @@ impl SpectrumSource for Reader {
                 scan_number: rec.scan_id,
                 native_id,
                 ms_level: rec.ms_level,
-                // Not recoverable: no byte offset in the ScanRecord was
-                // found to correlate with known polarity switches (verified
-                // against PXD031771/526b_1.d, whose AcqMethod.xml defines a
-                // mid-run positive/negative polarity segment). See
+                // Not wired in yet. Record offset 64 is IonPolarity per the
+                // bundle's own MSScan.xsd (0 = positive, 1 = negative),
+                // corroborated on PXD031771/526b_1.d. See
                 // docs/format/06-known-limitations.md.
                 polarity: None,
                 scan_mode: Some(scan_mode),

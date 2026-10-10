@@ -10,25 +10,27 @@ Some files uploaded to PRIDE are structurally malformed, missing the mandatory `
 - **PXD041903**: `20190423_Alex11.d`, `20190423_Alex3.d`, `20190423_Alex7.d` (Double-nested folders missing `AcqData` in the top level).
 - **PXD049393**: `__MACOSX/2022-07-07_sequence1.d`, `__MACOSX/2023-03-01_sequence1.d`, `__MACOSX/2023-07-12_sequence1.d` (macOS filesystem artifacts rather than real datasets).
 
-## 2. Spectrum Fields Not Recoverable From `MSScan.bin`
+## 2. Spectrum Fields Not Populated From `MSScan.bin`
 
 `SpectrumRecord::polarity` and `PrecursorInfo::selected_mz` are always
-`None` in the reader's output. Both were investigated against the corpus
-(not just assumed absent) and found unrecoverable from the current
-record layout:
+`None` in the reader's output. `polarity` is recoverable but not yet
+wired in; `selected_mz` was investigated against the corpus and not
+found:
 
-- **`polarity`**: `PXD031771/526b_1.d` (and four sibling bundles in the
-  same project) is a genuine mixed-polarity run - its `AcqMethod.xml`
-  defines per-time-segment `<ionPolarity>` with an explicit
-  Positive/Negative/Positive sequence across `StartTime` boundaries.
-  Every byte, `u16`, and `u32` offset in the `ScanRecord` (0..stride) was
-  checked for a value that stays constant within each polarity segment
-  and differs across segments; none was found. `MSPeriodicActuals.bin`'s
-  `MSActualDefs.xml` does define an `ActualID=65` "Ion Polarity" channel
-  (`Unit="0=Postive,1=Negative"`), but decoding it for this bundle
-  produces only 3 sparse log-on-change events with non-boolean values
-  (`0.0, 0.0, 4.232`) - inconclusive, not a confirmed source, so it is
-  not wired in either.
+- **`polarity`**: recoverable from record offset 64 (`int32`). The
+  `MSScan.xsd` shipped inside each bundle lists the `ScanRecord` fields
+  in order, and `IonPolarity` lands at offset 64 (after `ScanID`,
+  `ScanMethodID`, `TimeSegmentID`, `ScanTime`, `MSLevel`, `ScanType`,
+  `TIC`, `BasePeakMZ`, `BasePeakValue`, `CalibrationID`, `CycleNumber`,
+  `IonMode`). The same field order puts `CollisionEnergy` at offset 76,
+  which the reader already decodes. Corpus check on
+  `PXD031771/526b_1.d`, whose `AcqMethod.xml` defines time segments
+  Positive (0-0.1 min), Negative (0.1-0.5 min), Positive (0.5 min on):
+  offset 64 reads `0` for scans at 0.04-0.12 min, `1` for 38 scans at
+  0.22-0.53 min, and `0` for every scan after that. This matches
+  `MSActualDefs.xml`'s `"0=Postive,1=Negative"` encoding. An earlier
+  version of this page said no offset correlated with polarity; that was
+  wrong. Mapping it to `SpectrumRecord::polarity` is pending.
 - **`selected_mz`**: distinct from `target_mz` (the isolation window
   center, which the reader already exposes via
   `PrecursorInfo::target_mz`). Every `f32`/`f64` offset in the full
@@ -40,7 +42,7 @@ record layout:
   a processing step this reader does not perform), or it is identical to
   `target_mz` and therefore not a distinct field.
 
-If either field turns out to be recoverable via a source not yet
+If `selected_mz` turns out to be recoverable via a source not yet
 checked (e.g. a fuller decode of `MSPeriodicActuals.bin`'s per-channel
 `Value` semantics), treat this section as the place to update once
 there's corpus evidence to cite - not just a plausible byte offset.
