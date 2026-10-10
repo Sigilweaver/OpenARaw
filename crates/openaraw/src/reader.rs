@@ -233,8 +233,11 @@ impl SpectrumSource for Reader {
         RunMetadata {
             extra,
             source_file_name: self.bundle_name.clone(),
-            source_file_format: CvTerm::new("MS:1002846", "Agilent MassHunter format"),
-            native_id_format: CvTerm::new("MS:1002848", "Agilent MassHunter nativeID format"),
+            // PSI-MS: MS:1001509 "Agilent MassHunter format" (is_a
+            // MS:1000560 mass spectrometer file format) and MS:1001508
+            // "Agilent MassHunter nativeID format" (`scanId=...`).
+            source_file_format: CvTerm::new("MS:1001509", "Agilent MassHunter format"),
+            native_id_format: CvTerm::new("MS:1001508", "Agilent MassHunter nativeID format"),
             instrument: self.instrument.clone(),
             instrument_serial_number: None,
             software_name: "openaraw".to_string(),
@@ -434,6 +437,7 @@ impl SpectrumSource for Reader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::raw::msscan::ScanRecord;
 
     /// Minimal `MSScan` carrying just the field [`resolve_analyzer`] and
     /// [`resolve_instrument`] read: the record stride used for their
@@ -495,9 +499,41 @@ mod tests {
         );
     }
 
+    /// In-memory `Reader` over synthetic scan records, with no backing
+    /// `.d` directory (payload reads fail, which iter_spectra tolerates).
+    fn reader_with_records(stride: u32, records: Vec<ScanRecord>) -> Reader {
+        Reader {
+            dir: PathBuf::new(),
+            bundle_name: String::new(),
+            msscan: MSScan {
+                global_header_size: 0,
+                stride,
+                records,
+            },
+            device: None,
+            peak_path: PathBuf::new(),
+            profile_path: PathBuf::new(),
+            instrument: CvTerm::new("MS:1000490", "Agilent instrument model"),
+            analyzer: Analyzer::TOFMS,
+            start_timestamp: None,
+        }
+    }
+
+    #[test]
+    fn run_metadata_uses_agilent_masshunter_cv_terms() {
+        let meta = reader_with_records(284, Vec::new()).run_metadata();
+        assert_eq!(meta.source_file_format.accession, "MS:1001509");
+        assert_eq!(meta.source_file_format.name, "Agilent MassHunter format");
+        assert_eq!(meta.native_id_format.accession, "MS:1001508");
+        assert_eq!(
+            meta.native_id_format.name,
+            "Agilent MassHunter nativeID format"
+        );
+    }
+
     #[test]
     fn spectrum_exposes_instrument_reported_base_peak() {
-        let record = crate::raw::msscan::ScanRecord {
+        let record = ScanRecord {
             scan_id: 1,
             retention_time_min: 0.5,
             ms_level: 1,
@@ -511,21 +547,7 @@ mod tests {
             profile_params: None,
             centroid_params: None,
         };
-        let mut reader = Reader {
-            dir: PathBuf::new(),
-            bundle_name: String::new(),
-            msscan: MSScan {
-                global_header_size: 0,
-                stride: 284,
-                records: vec![record],
-            },
-            device: None,
-            peak_path: PathBuf::new(),
-            profile_path: PathBuf::new(),
-            instrument: CvTerm::new("MS:1000490", "Agilent instrument model"),
-            analyzer: Analyzer::TOFMS,
-            start_timestamp: None,
-        };
+        let mut reader = reader_with_records(284, vec![record]);
 
         let spectrum = reader.iter_spectra().next().unwrap();
         assert_eq!(spectrum.base_peak_mz, None);
@@ -542,7 +564,7 @@ mod tests {
 
     #[test]
     fn spectrum_extra_omits_offset_36_key_when_absent() {
-        let record = crate::raw::msscan::ScanRecord {
+        let record = ScanRecord {
             scan_id: 1,
             retention_time_min: 0.5,
             ms_level: 1,
@@ -556,21 +578,7 @@ mod tests {
             profile_params: None,
             centroid_params: None,
         };
-        let mut reader = Reader {
-            dir: PathBuf::new(),
-            bundle_name: String::new(),
-            msscan: MSScan {
-                global_header_size: 0,
-                stride: 220,
-                records: vec![record],
-            },
-            peak_path: PathBuf::new(),
-            profile_path: PathBuf::new(),
-            instrument: CvTerm::new("MS:1000490", "Agilent instrument model"),
-            analyzer: Analyzer::TOFMS,
-            start_timestamp: None,
-            device: None,
-        };
+        let mut reader = reader_with_records(220, vec![record]);
 
         let spectrum = reader.iter_spectra().next().unwrap();
         assert!(spectrum.extra.is_empty());
