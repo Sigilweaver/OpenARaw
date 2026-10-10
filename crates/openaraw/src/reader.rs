@@ -5,6 +5,7 @@ use openmassspec_core::{
     SpectrumSource,
 };
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::raw::metadata::{parse_acquired_time, parse_devices_xml, DeviceInfo};
 use crate::raw::mspeak::{decode_peak_block, PeakSpectrum};
@@ -26,6 +27,24 @@ pub struct Reader {
     instrument: CvTerm,
     analyzer: Analyzer,
     start_timestamp: Option<String>,
+    profile_decode_failures: AtomicUsize,
+    centroid_decode_failures: AtomicUsize,
+}
+
+/// Payload kind for decode-failure accounting.
+#[derive(Clone, Copy)]
+enum PayloadKind {
+    Profile,
+    Centroid,
+}
+
+impl PayloadKind {
+    fn name(self) -> &'static str {
+        match self {
+            PayloadKind::Profile => "profile",
+            PayloadKind::Centroid => "centroid",
+        }
+    }
 }
 
 /// Resolve a PSI-MS CV term for an Agilent instrument model read from
@@ -211,7 +230,53 @@ impl Reader {
             instrument,
             analyzer,
             start_timestamp,
+            profile_decode_failures: AtomicUsize::new(0),
+            centroid_decode_failures: AtomicUsize::new(0),
         })
+    }
+
+    /// Number of scans whose `MSProfile.bin` block could not be read or
+    /// decoded so far (cumulative across `iter_spectra` calls). Such scans
+    /// fall back to centroid data.
+    pub fn profile_decode_failures(&self) -> usize {
+        self.profile_decode_failures.load(Ordering::Relaxed)
+    }
+
+    /// Number of scans whose `MSPeak.bin` block could not be read or
+    /// decoded so far (cumulative across `iter_spectra` calls). Such scans
+    /// are emitted with empty m/z and intensity arrays.
+    pub fn centroid_decode_failures(&self) -> usize {
+        self.centroid_decode_failures.load(Ordering::Relaxed)
+    }
+
+    /// Count a payload read/decode failure and log it. The first failure of
+    /// each kind per reader is logged at warn level; the rest at debug, so
+    /// a bundle where every scan fails does not flood the log.
+    fn record_decode_failure(&self, kind: PayloadKind, scan_id: u32, err: &crate::Error) {
+        let counter = match kind {
+            PayloadKind::Profile => &self.profile_decode_failures,
+            PayloadKind::Centroid => &self.centroid_decode_failures,
+        };
+        let previous = counter.fetch_add(1, Ordering::Relaxed);
+        if previous == 0 {
+            log::warn!(
+                "{}: {} block for scanId={} failed to decode: {} \
+                 (further {} failures in this bundle are logged at debug level)",
+                self.bundle_name,
+                kind.name(),
+                scan_id,
+                err,
+                kind.name(),
+            );
+        } else {
+            log::debug!(
+                "{}: {} block for scanId={} failed to decode: {}",
+                self.bundle_name,
+                kind.name(),
+                scan_id,
+                err,
+            );
+        }
     }
 }
 
@@ -280,37 +345,49 @@ impl SpectrumSource for Reader {
             let mut intensity = vec![];
             let mut scan_mode = ScanMode::Centroid;
 
-            // Try to read profile data first
+            // Try to read profile data first. Failures are counted and
+            // logged (see `record_decode_failure`), then fall through to
+            // centroid data.
             if let Some(params) = &rec.profile_params {
-                if let Ok(bytes) = crate::raw::read_bytes(
+                let decoded = crate::raw::read_bytes(
                     &self.profile_path,
                     params.offset,
                     params.byte_count as usize,
-                ) {
-                    if let Ok(spec) = decode_profile_block(
+                )
+                .and_then(|bytes| {
+                    decode_profile_block(
                         &bytes,
                         params,
                         rec.min_x.unwrap_or(0.0),
                         rec.max_x.unwrap_or(0.0),
-                    ) {
+                    )
+                });
+                match decoded {
+                    Ok(spec) => {
                         mz = spec.mz;
                         intensity = spec.intensity;
                         scan_mode = ScanMode::Profile;
                     }
+                    Err(err) => self.record_decode_failure(PayloadKind::Profile, rec.scan_id, &err),
                 }
             }
 
             // If profile failed or not present, read centroid
             if mz.is_empty() {
                 if let Some(params) = &rec.centroid_params {
-                    if let Ok(bytes) = crate::raw::read_bytes(
+                    let decoded = crate::raw::read_bytes(
                         &self.peak_path,
                         params.offset,
                         params.byte_count as usize,
-                    ) {
-                        if let Ok(spec) = decode_peak_block(&bytes, params) {
+                    )
+                    .and_then(|bytes| decode_peak_block(&bytes, params));
+                    match decoded {
+                        Ok(spec) => {
                             mz = spec.mz;
                             intensity = spec.intensity;
+                        }
+                        Err(err) => {
+                            self.record_decode_failure(PayloadKind::Centroid, rec.scan_id, &err)
                         }
                     }
                 }
@@ -519,6 +596,8 @@ mod tests {
             instrument: CvTerm::new("MS:1000490", "Agilent instrument model"),
             analyzer: Analyzer::TOFMS,
             start_timestamp: None,
+            profile_decode_failures: AtomicUsize::new(0),
+            centroid_decode_failures: AtomicUsize::new(0),
         }
     }
 
@@ -555,6 +634,38 @@ mod tests {
         let precursor = spectrum.precursor.expect("MS2 has precursor info");
         assert_eq!(precursor.target_mz, Some(500.25));
         assert_eq!(precursor.precursor_native_id, None);
+    }
+
+    #[test]
+    fn unreadable_payloads_are_counted_not_silently_dropped() {
+        let params = |format_id| crate::raw::msscan::SpectrumParams {
+            format_id,
+            offset: 0,
+            byte_count: 12,
+            point_count: 1,
+            uncompressed_byte_count: Some(20),
+        };
+        let record = ScanRecord {
+            scan_id: 7,
+            retention_time_min: 1.0,
+            ms_level: 1,
+            min_x: None,
+            max_x: None,
+            base_peak_intensity: None,
+            unidentified_offset_36: None,
+            mrm_channel_id: None,
+            target_mz: None,
+            collision_energy: None,
+            profile_params: Some(params(1)),
+            centroid_params: Some(params(2)),
+        };
+        // Empty paths: both payload reads fail.
+        let mut reader = reader_with_records(284, vec![record.clone(), record]);
+        let spectra: Vec<_> = reader.iter_spectra().collect();
+        assert_eq!(spectra.len(), 2);
+        assert!(spectra.iter().all(|s| s.mz.is_empty()));
+        assert_eq!(reader.profile_decode_failures(), 2);
+        assert_eq!(reader.centroid_decode_failures(), 2);
     }
 
     #[test]
