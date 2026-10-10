@@ -2,7 +2,9 @@
 
 Binary payload file containing centroid (peak) mass spectra. Present in both QQQ and Q-TOF acquisitions. Each scan's data block is located via `SpectrumOffset` and `ByteCount` from the corresponding `MSScan.bin` scan record.
 
-## Status: Confirmed
+## Status: Under revision
+
+The Q-TOF (FormatID=2) section below is known to be wrong: the stored x-values are uncalibrated flight times, not m/z x 100, and must be converted with the bundle's mass calibration (see `05-msmasscal.md`). The QQQ (FormatID=3) section is unaffected. This page will be corrected alongside the reader fix.
 
 ## File Layout
 

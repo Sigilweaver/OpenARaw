@@ -17,6 +17,21 @@ and QQQ (MRM) acquisitions.
 
 Documentation: [sigilweaver.app/openaraw/docs](https://sigilweaver.app/openaraw/docs)
 
+## Known issues
+
+These affect 0.2.0 and earlier. A fix is in progress.
+
+- **Q-TOF m/z values are incorrect.** Q-TOF centroid x-values are
+  uncalibrated flight times, and the reader reports them as m/z without
+  applying the bundle's mass calibration (`DefaultMassCal.xml` /
+  `MSMassCal.bin`). The error depends on m/z and runs to hundreds of Da,
+  so Q-TOF m/z values from these releases should not be used.
+- **Profile spectra are not emitted.** Profile blocks in `MSProfile.bin`
+  fail to decode, and the reader silently falls back to centroid data
+  for every scan.
+- **QQQ (MRM) centroid data is unaffected.** MRM m/z values are stored
+  directly and are read as-is.
+
 ## Install
 
 **Prefer [`openmassspec-io`](https://github.com/Sigilweaver/OpenMassSpec)
