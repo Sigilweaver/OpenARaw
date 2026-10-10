@@ -67,6 +67,10 @@ ships as 0.3.0.
 
 ### Fixed
 
+- Bundles without a usable `Devices.xml` and with 216-byte `MSScan.bin`
+  records are labeled Q-TOF (`TOFMS`, "Agilent Q-TOF") instead of QQQ.
+  The record-size fallback treats 216, 220 and 284 as Q-TOF and 186 and
+  196 as QQQ. Affected `PXD031771/655_2.d` in the corpus.
 - Q-TOF centroid m/z is no longer the raw flight time divided by 100,
   and Q-TOF payloads without a usable calibration are counted as decode
   failures instead of being reported as m/z.
