@@ -46,7 +46,7 @@ All fields are little-endian. Offsets are relative to the start of each scan rec
 - `RetentionTime` (double, minutes): Verified monotonically increasing (zero inversions) across all scans in PXD004747 (0.0001-20.3 min), PXD028295 (2.35-41.19 min), PXD001310 (0.038-60.13 min). For QQQ MRM, all scans within an MRM cycle share the same chromatographic retention time (the MRM channels all fire at the same chromatographic point).
 
 **Field confirmed at record offset 20:**
-- `MSLevel` (int16, not int32 - the upper two bytes at offset 22 belong to a separate field and were previously misread as part of MSLevel): 1 for MS1, 2 for MS2. Observed in Q-TOF (PXD001310) where scan 8 had MSLevel=2 and had a precursor ion listed at other offsets.
+- `MSLevel` (int16, not int32 - the upper two bytes at offset 22 belong to a separate field): 1 for MS1, 2 for MS2. Observed in Q-TOF (PXD001310) where scan 8 had MSLevel=2 and had a precursor ion listed at other offsets.
 
 **Q-TOF-specific fields:**
 - Offsets 28-55: summary fields, in the order the bundle's own `MSScan.xsd`
