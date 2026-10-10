@@ -10,7 +10,7 @@ Binary scan index file. Always present in `.d/AcqData/`. Encodes per-scan metada
 
 The `GlobalHeaderSize` is stored as a 32-bit little-endian integer at file offset `0x58` (88).
 
-**Validated corpus (7 files, all with zero remainder):**
+**Validated corpus (8 files, all with zero remainder):**
 
 | PXD       | Instrument             | Model   | HeaderSize | Stride |
 |-----------|------------------------|---------|-----------|--------|
@@ -84,7 +84,7 @@ These IDs are NOT run-level properties. They are per-scan and per-block:
 - **ID = 2**: Centroid peak data, pointing into `MSPeak.bin`. Observed in all Q-TOF files. Does NOT have an `UncompressedByteCount` field (data is not compressed).
 - **ID = 3**: Single-point MRM data, pointing into `MSPeak.bin`. Observed in both QQQ files (PXD004747, PXD028295). Structurally same as ID=2 but always has `PointCount=1`.
 
-> **Note on ID=3 encoding:** In PXD028295 (stride=186), the `SpectrumFormatID` is stored as **int16** (not int32) at the params block offset, with the `SpectrumOffset` (int64) immediately following at +2 bytes. In all other files (stride >= 220), the `SpectrumFormatID` is int32 and `SpectrumOffset` starts at +4 bytes. This is the only structural divergence found across the 7 files.
+> **Note on ID=3 encoding:** In PXD028295 (stride=186), the `SpectrumFormatID` is stored as **int16** (not int32) at the params block offset, with the `SpectrumOffset` (int64) immediately following at +2 bytes. In all other files (every stride except 186: 196, 216, 220, 284), the `SpectrumFormatID` is int32 and `SpectrumOffset` starts at +4 bytes. This is the only structural divergence found across the 8 files.
 
 ### SpectrumParams Block Offsets Within Record
 
@@ -105,6 +105,21 @@ These IDs are NOT run-level properties. They are per-scan and per-block:
 | 12-15 | ByteCount         | int32  |
 | 16-19 | PointCount        | int32  |
 | 20-23 | UncompressedByteCount | int32 (only present when FormatID=1) |
+
+## Stride Detection
+
+More than one candidate stride can evenly divide a file's payload length
+(the bytes after the global header); 216 and 196 both divide some Q-TOF
+payloads. The reader tries the candidates in the order 284, 220, 216,
+196, 186 and accepts the first one that evenly divides the payload length
+and passes one of these checks:
+
+- The payload is exactly one record of that stride.
+- The second record, decoded at that stride, has an `MSLevel` (record
+  offset 20) of 1 or 2 and a `ScanID` greater than the first record's
+  `ScanID` and less than the first `ScanID` plus 100000.
+
+If no candidate passes, the reader returns a parse error.
 
 ## Unresolved
 
