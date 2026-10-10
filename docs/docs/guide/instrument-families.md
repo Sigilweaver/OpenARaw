@@ -46,9 +46,8 @@ spectrometer `<Device>` entry: `<Name>QTOF</Name>` maps to
 validation corpus (see
 [`docs/format/07-run-metadata.md`](https://github.com/Sigilweaver/OpenARaw/blob/main/docs/format/07-run-metadata.md)
 in the repository). Only when `Devices.xml` is missing, unparseable, or
-names a device outside those two known values does it fall back to the
-legacy heuristic: `MSScan.bin`'s
-record stride (`>= 220` bytes indicates Q-TOF; QQQ records use a shorter
-186- or 196-byte stride) - see [MSScan.bin](../format/msscan) for the full
+names a device outside those two known values does it fall back to
+`MSScan.bin`'s record stride (a 216-, 220- or 284-byte stride indicates
+Q-TOF; QQQ records use a 186- or 196-byte stride) - see [MSScan.bin](../format/msscan) for the full
 stride table. If you encounter a `.d` directory either path misclassifies,
 please [open an issue](https://github.com/Sigilweaver/OpenARaw/issues).

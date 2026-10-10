@@ -12,7 +12,7 @@ use crate::raw::defaultmasscal::DefaultCalibration;
 use crate::raw::metadata::{parse_acquired_time, parse_devices_xml, DeviceInfo};
 use crate::raw::mspeak::decode_peak_block;
 use crate::raw::msprofile::decode_profile_block;
-use crate::raw::msscan::MSScan;
+use crate::raw::msscan::{is_qtof_stride, MSScan};
 
 pub struct Reader {
     pub dir: PathBuf,
@@ -84,8 +84,7 @@ fn resolve_instrument(device: Option<&DeviceInfo>, msscan: &MSScan) -> CvTerm {
         return instrument_cv_for_model(&device.model);
     }
 
-    let is_qtof = msscan.stride >= 220;
-    let instrument_name = if is_qtof {
+    let instrument_name = if is_qtof_stride(msscan.stride) {
         "Agilent Q-TOF"
     } else {
         "Agilent QQQ"
@@ -102,8 +101,8 @@ fn resolve_instrument(device: Option<&DeviceInfo>, msscan: &MSScan) -> CvTerm {
 /// instruments) or `"TandemQuadrupole"` (`Type=5`, QQQ instruments) - a
 /// direct statement of the analyzer family from the acquisition's own
 /// metadata, rather than a guess inferred from `MSScan.bin`'s record
-/// size. Falls back to the stride-based guess (`stride >= 220` => TOFMS,
-/// matching the wide Q-TOF record layout; narrower => TQMS) when
+/// size. Falls back to the stride-based guess (a Q-TOF stride per
+/// [`is_qtof_stride`], i.e. 216, 220 or 284 => TOFMS; any other => TQMS) when
 /// `Devices.xml` is missing, unparseable, or names a device outside
 /// those two known values - the same real-world condition
 /// `resolve_instrument` above falls back for (see
@@ -115,7 +114,7 @@ fn resolve_analyzer(device: Option<&DeviceInfo>, msscan: &MSScan) -> Analyzer {
         _ => {}
     }
 
-    if msscan.stride >= 220 {
+    if is_qtof_stride(msscan.stride) {
         Analyzer::TOFMS
     } else {
         Analyzer::TQMS
@@ -250,7 +249,7 @@ fn polynomial_flags(
 /// calibration at all are logged and get `None`; their payloads are then
 /// counted as decode failures rather than reported as m/z.
 fn load_calibrations(acq: &Path, msscan: &MSScan, bundle: &str) -> Vec<Option<TofCalibration>> {
-    if !crate::raw::msscan::is_qtof_stride(msscan.stride) {
+    if !is_qtof_stride(msscan.stride) {
         return Vec::new();
     }
 
@@ -707,6 +706,31 @@ mod tests {
             resolve_analyzer(None, &msscan_with_stride(150)),
             Analyzer::TQMS
         );
+    }
+
+    /// Without a usable `Devices.xml`, every Q-TOF stride (216, 220, 284)
+    /// must resolve to Q-TOF and both QQQ strides (186, 196) to QQQ, for the
+    /// analyzer and the instrument term alike.
+    #[test]
+    fn stride_fallback_classifies_every_known_stride() {
+        for (stride, qtof) in [
+            (284, true),
+            (220, true),
+            (216, true),
+            (196, false),
+            (186, false),
+        ] {
+            let msscan = msscan_with_stride(stride);
+            let (analyzer, name) = if qtof {
+                (Analyzer::TOFMS, "Agilent Q-TOF")
+            } else {
+                (Analyzer::TQMS, "Agilent QQQ")
+            };
+            assert_eq!(resolve_analyzer(None, &msscan), analyzer, "stride {stride}");
+            let instrument = resolve_instrument(None, &msscan);
+            assert_eq!(instrument.accession, "MS:1000461", "stride {stride}");
+            assert_eq!(instrument.name, name, "stride {stride}");
+        }
     }
 
     #[test]

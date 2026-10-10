@@ -86,9 +86,10 @@ above) sets the per-spectrum `SpectrumRecord::analyzer` field (see
 
 When `Devices.xml` is missing, unparseable, or its first device lacks a
 non-empty `<Name>` or `<ModelNumber>`, both `resolve_instrument` and
-`resolve_analyzer` fall back to the `MSScan.bin` record stride: a stride
-of 220 or more is treated as Q-TOF (analyzer TOFMS) and a narrower stride
-as QQQ (analyzer TQMS), and the instrument is tagged with the generic
+`resolve_analyzer` fall back to the `MSScan.bin` record stride: a Q-TOF
+stride (216, 220 or 284, see `docs/format/01-msscan.md`) is treated as
+Q-TOF (analyzer TOFMS) and a QQQ stride (186 or 196) as QQQ (analyzer
+TQMS), and the instrument is tagged with the generic
 `MS:1000461` CV term in either case. `resolve_analyzer` also uses this
 fallback when the first device's `<Name>` is neither `QTOF` nor
 `TandemQuadrupole`; `resolve_instrument` still maps the `<ModelNumber>`
