@@ -2,7 +2,9 @@
 
 Binary payload file containing profile-mode (full-scan) mass spectra. Only present when the instrument was configured to record profile data. In all corpus files tested, if `MSProfile.bin` exists with non-zero size, the corresponding `MSScan.bin` scan records have a SpectrumFormatID=1 block pointing into it.
 
-## Status: Confirmed
+## Status: Incorrect; see Known issues
+
+The block layout below does not decode real corpus blocks: the reader built from it fails on every profile scan and falls back to centroid data. The 16-byte preamble / LZF start offset are unverified, and the m/z axis is, like centroid x-values, in uncalibrated flight-time units. See `06-known-limitations.md` section 4.
 
 ## File Layout
 

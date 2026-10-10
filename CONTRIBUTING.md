@@ -69,9 +69,24 @@ tool output, vendor source, or values you learned by running vendor
 software. We'll investigate and fix it from public references. Detailed
 issue reports are genuinely useful and will be acted on.
 
-`/workspaces/Projects/Data` (or wherever the corpus lives in your checkout)
-holds real research data that can be expensive to redownload. Treat it as
-read-only except for adding cache/derived files you clearly own.
+The research corpus (wherever it lives on your machine) holds real
+research data that can be expensive to redownload. Treat it as read-only
+except for adding cache/derived files you clearly own.
+
+Corpus-backed tests and the `corpus_scan` example find it through
+environment variables:
+
+- `OPENARAW_CORPUS`: the corpus root, the directory containing
+  `index.csv` and the per-accession folders (e.g. `PXD004747/...`).
+  Tests that need a bundle only found there skip when this is unset.
+- `REQUIRE_CORPUS=1`: make the conformance tests fail, instead of
+  skip, when their fixture is missing. CI sets this for jobs that
+  download fixtures into `corpus/`.
+
+```sh
+OPENARAW_CORPUS=/path/to/ARaw cargo test --workspace
+OPENARAW_CORPUS=/path/to/ARaw cargo run --release --example corpus_scan
+```
 
 ## Security
 

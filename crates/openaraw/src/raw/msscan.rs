@@ -88,7 +88,7 @@ impl MSScan {
             );
             for s in possible_strides.iter() {
                 let s_val = *s as usize;
-                if payload_len % s_val == 0 {
+                if payload_len.is_multiple_of(s_val) {
                     if payload_len == s_val {
                         stride = *s;
                         break;
@@ -104,7 +104,7 @@ impl MSScan {
 
                         if (ms_level_2 == 1 || ms_level_2 == 2)
                             && next_scan_id > first_scan_id
-                            && next_scan_id < first_scan_id + 100000
+                            && next_scan_id < first_scan_id.saturating_add(100000)
                         {
                             stride = *s;
                             break;
@@ -285,6 +285,16 @@ mod tests {
         }
     }
 
+    /// A first ScanID near `u32::MAX` must not overflow the stride probe's
+    /// `first_scan_id.saturating_add(100000)` window (a panic in debug builds).
+    #[test]
+    fn stride_probe_does_not_overflow_on_large_first_scan_id() {
+        let bytes = msscan_bytes(284, &[(u32::MAX - 100, 1), (u32::MAX - 99, 1)]);
+        let scan = MSScan::from_bytes(&bytes).expect("parse");
+        assert_eq!(scan.stride, 284);
+        assert_eq!(scan.records.len(), 2);
+    }
+
     #[test]
     fn detects_stride_from_single_exact_record() {
         // With exactly one record, the probe short-circuits on
@@ -338,9 +348,10 @@ mod tests {
     }
 
     /// Corpus files live out of tree (large real-world acquisitions, not
-    /// checked into the repo - see the fixture pattern in
-    /// `crates/openaraw/tests/conformance.rs`), so this test skips cleanly
-    /// when the fixture isn't present locally instead of failing the build.
+    /// checked into the repo). This fixture is only in the full research
+    /// corpus, not in CI's downloaded fixtures, so the test skips when
+    /// `OPENARAW_CORPUS` is unset. If `OPENARAW_CORPUS` is set but the
+    /// bundle is missing, it fails rather than skipping.
     /// Exercises the real stride-284 record bytes (PXD001310, per
     /// `docs/format/01-msscan.md`'s validated corpus table and
     /// Sigilweaver/OpenARaw#19) to confirm offset 36 decodes to a sensible
@@ -348,15 +359,19 @@ mod tests {
     /// buffers.
     #[test]
     fn stride_284_offsets_36_and_44_decode_from_real_corpus() {
-        let path = std::path::Path::new(
-            "/workspaces/Projects/Data/ARaw/PXD001310/2013-02-26-001 EF CR DMSO 60m r1.d/AcqData/MSScan.bin",
-        );
-        if !path.exists() {
-            eprintln!("skip: no PXD001310 corpus fixture available");
+        let Some(root) = std::env::var_os("OPENARAW_CORPUS") else {
+            eprintln!("skip: OPENARAW_CORPUS not set");
             return;
-        }
+        };
+        let path = std::path::Path::new(&root)
+            .join("PXD001310/2013-02-26-001 EF CR DMSO 60m r1.d/AcqData/MSScan.bin");
+        assert!(
+            path.exists(),
+            "OPENARAW_CORPUS is set but {} is missing",
+            path.display()
+        );
 
-        let scan = MSScan::from_path(path).expect("parse real PXD001310 MSScan.bin");
+        let scan = MSScan::from_path(&path).expect("parse real PXD001310 MSScan.bin");
         assert_eq!(scan.stride, 284);
         assert!(!scan.records.is_empty());
 
@@ -385,8 +400,7 @@ mod tests {
         assert_eq!(scan.records[0].base_peak_intensity, Some(1_572_319.625));
     }
 
-    /// Regression test for the bounds guard fixed alongside the stride
-    /// probe: a payload of 1..=3 bytes is too short for the 4-byte ScanID
+    /// Bounds guard in the stride probe: a payload of 1..=3 bytes is too short for the 4-byte ScanID
     /// the probe reads, and must produce a parse error rather than
     /// panicking on an out-of-bounds slice.
     #[test]

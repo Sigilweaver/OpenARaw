@@ -6,8 +6,13 @@ use openaraw::reader::Reader;
 use openmassspec_core::conformance::assert_source_invariants;
 
 fn main() {
-    let index_path = PathBuf::from("/workspaces/Projects/Data/ARaw/index.csv");
-    let base_dir = PathBuf::from("/workspaces/Projects/Data/ARaw");
+    // Root of the research corpus (the directory holding index.csv and the
+    // per-accession bundle folders). See CONTRIBUTING.md.
+    let Some(base_dir) = std::env::var_os("OPENARAW_CORPUS").map(PathBuf::from) else {
+        eprintln!("Set OPENARAW_CORPUS to the corpus root (the directory containing index.csv)");
+        std::process::exit(2);
+    };
+    let index_path = base_dir.join("index.csv");
 
     let file = File::open(&index_path).expect("Failed to open index.csv");
     let reader = BufReader::new(file);

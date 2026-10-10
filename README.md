@@ -5,7 +5,7 @@
 [![PyPI](https://img.shields.io/pypi/v/openaraw.svg)](https://pypi.org/project/openaraw/)
 [![docs.rs](https://img.shields.io/docsrs/openaraw)](https://docs.rs/openaraw)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Rust MSRV](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust MSRV](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
 
 > Part of the [OpenMassSpec](https://github.com/Sigilweaver/OpenMassSpec)
 > stack for mass spectrometry raw-file access.
@@ -16,6 +16,20 @@ modern `AcqData` MassHunter shape across Q-TOF (profile and centroid)
 and QQQ (MRM) acquisitions.
 
 Documentation: [sigilweaver.app/openaraw/docs](https://sigilweaver.app/openaraw/docs)
+
+## Known issues
+
+- **Q-TOF m/z values are incorrect.** Q-TOF centroid x-values are
+  uncalibrated flight times, and the reader reports them as m/z without
+  applying the bundle's mass calibration (`DefaultMassCal.xml` /
+  `MSMassCal.bin`). The error depends on m/z and runs to hundreds of Da,
+  so Q-TOF m/z values should not be used.
+- **Profile spectra are not emitted.** Profile blocks in `MSProfile.bin`
+  fail to decode, and the reader falls back to centroid data for every
+  scan. Each failure is logged and counted
+  (`Reader::profile_decode_failures()`).
+- **QQQ (MRM) centroid data is unaffected.** MRM m/z values are stored
+  directly and are read as-is.
 
 ## Install
 

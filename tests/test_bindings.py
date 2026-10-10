@@ -12,6 +12,8 @@ import pytest
 def test_decoded_fields():
     path = Path(os.environ.get("OPENARAW_TEST_BUNDLE", "corpus/180814-Sample19.d"))
     if not path.is_dir():
+        if os.environ.get("REQUIRE_CORPUS") == "1":
+            pytest.fail(f"REQUIRE_CORPUS=1 but bundle {path} is missing")
         pytest.skip("set OPENARAW_TEST_BUNDLE to an Agilent bundle")
     reader = openaraw.RawReader(str(path))
     run = reader.run_info()
