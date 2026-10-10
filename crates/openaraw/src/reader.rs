@@ -397,8 +397,11 @@ impl SpectrumSource for Reader {
                         precursor_native_id = Some(format!("mrm_channel={}", mrm_id));
                     } else if let Some(mz) = rec.target_mz {
                         target_mz = Some(mz);
-                        // For Q-TOF MS2, we can also extract a precursor native ID based on ScanID
-                        precursor_native_id = Some(format!("scanId={}", rec.scan_id));
+                        // Q-TOF MS2: the parent scan is the record's
+                        // DataDependentScanParamType.DDScanID (per the
+                        // bundle's MSScan.xsd), which is not decoded yet.
+                        // Leave the precursor reference unset rather than
+                        // pointing it at this spectrum's own scan.
                     }
 
                     Some(PrecursorInfo {
@@ -529,6 +532,29 @@ mod tests {
             meta.native_id_format.name,
             "Agilent MassHunter nativeID format"
         );
+    }
+
+    #[test]
+    fn qtof_ms2_precursor_does_not_reference_its_own_scan() {
+        let record = ScanRecord {
+            scan_id: 42,
+            retention_time_min: 1.0,
+            ms_level: 2,
+            min_x: None,
+            max_x: None,
+            base_peak_intensity: None,
+            unidentified_offset_36: None,
+            mrm_channel_id: None,
+            target_mz: Some(500.25),
+            collision_energy: Some(20.0),
+            profile_params: None,
+            centroid_params: None,
+        };
+        let mut reader = reader_with_records(284, vec![record]);
+        let spectrum = reader.iter_spectra().next().unwrap();
+        let precursor = spectrum.precursor.expect("MS2 has precursor info");
+        assert_eq!(precursor.target_mz, Some(500.25));
+        assert_eq!(precursor.precursor_native_id, None);
     }
 
     #[test]
