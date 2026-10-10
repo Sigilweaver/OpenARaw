@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scan; it is `None` until the parent scan (DDScanID) is decoded.
 - `MSScan.bin` stride detection no longer overflows when the first
   ScanID is near `u32::MAX`.
+- `Devices.xml` and `Contents.xml` read errors (other than a missing
+  file) and XML parse errors are logged at warn level instead of being
+  ignored.
 - Docs: `IonPolarity` is at `MSScan.bin` record offset 64 (per the
   bundle's `MSScan.xsd`, checked on PXD031771); the docs said polarity
   was not recoverable.

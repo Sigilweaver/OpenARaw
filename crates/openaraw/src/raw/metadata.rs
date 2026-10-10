@@ -33,13 +33,38 @@ pub struct DeviceInfo {
     pub model: String,
 }
 
+/// Read an optional metadata XML file. A missing file is a normal
+/// condition and returns `None` quietly; any other I/O error is logged at
+/// warn level before returning `None`.
+fn read_optional_xml(path: &Path) -> Option<String> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            log::warn!("{}: read failed: {}", path.display(), e);
+            None
+        }
+    }
+}
+
+/// Parse metadata XML, logging a parse error at warn level.
+fn parse_xml_logged<'a>(path: &Path, text: &'a str) -> Option<roxmltree::Document<'a>> {
+    match roxmltree::Document::parse(text) {
+        Ok(doc) => Some(doc),
+        Err(e) => {
+            log::warn!("{}: XML parse failed: {}", path.display(), e);
+            None
+        }
+    }
+}
+
 /// Read `Devices.xml` and return the first `<Device>` element, which is
 /// always the mass spectrometer itself (see module docs). Returns `None`
 /// if the file is absent, unparseable, or has no `<Device>` children with
 /// both `<Name>` and `<ModelNumber>` present.
 pub fn parse_devices_xml(path: &Path) -> Option<DeviceInfo> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let doc = roxmltree::Document::parse(&text).ok()?;
+    let text = read_optional_xml(path)?;
+    let doc = parse_xml_logged(path, &text)?;
     let device = doc
         .descendants()
         .find(|n| n.is_element() && n.tag_name().name() == "Device")?;
@@ -56,8 +81,8 @@ pub fn parse_devices_xml(path: &Path) -> Option<DeviceInfo> {
 /// Returns `None` if the file is absent, unparseable, or the element is
 /// missing/empty.
 pub fn parse_acquired_time(path: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let doc = roxmltree::Document::parse(&text).ok()?;
+    let text = read_optional_xml(path)?;
+    let doc = parse_xml_logged(path, &text)?;
     let root = doc.root_element();
     let value = child_text(root, "AcquiredTime")?;
     if value.is_empty() {
