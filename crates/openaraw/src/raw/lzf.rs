@@ -7,7 +7,7 @@
 /// `docs/format/04-msprofile.md`); a real Q-TOF profile spectrum tops out at
 /// a few MB, so 512 MiB is generous headroom while still ruling out a
 /// crafted header forcing a multi-GB allocation from a tiny compressed input.
-const MAX_DECOMPRESSED_LEN: usize = 512 * 1024 * 1024;
+pub(crate) const MAX_DECOMPRESSED_LEN: usize = 512 * 1024 * 1024;
 
 /// Decompress raw LZF data.
 pub fn decompress(input: &[u8], expected_len: usize) -> crate::Result<Vec<u8>> {
