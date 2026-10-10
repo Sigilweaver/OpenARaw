@@ -26,12 +26,6 @@ Documentation: [sigilweaver.app/openaraw/docs](https://sigilweaver.app/openaraw/
   `Reader::profile_decode_failures()`); flight times are never reported
   as m/z. One corpus bundle (`PXD031771/655_2.d`) is affected.
 
-- **Profile spectra from acquisition software 10.x are not decoded.**
-  Their `MSProfile.bin` blocks use an encoding the reader does not decode
-  yet (seen in `PXD044639`, which has no centroid data, so its spectra are
-  empty). Each block is logged and counted
-  (`Reader::profile_decode_failures()`).
-
 QQQ (MRM) m/z values are stored directly and are read as-is.
 
 ## Install

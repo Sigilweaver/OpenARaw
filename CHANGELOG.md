@@ -78,6 +78,20 @@ ships as 0.3.0.
   decompresses to an `f64` start time and `f64` sampling period followed
   by the intensities; the old 16-byte-preamble layout failed on every
   real block.
+- Profile spectra from acquisition software 10.1 (`PXD044639`) are
+  decoded. Their `MSProfile.bin` blocks are run-length encoded, not LZF:
+  the axis header is stored as is, followed by a stream of signed
+  integers of varying width where a negative value skips zero points and
+  sets the width of the values that follow (see
+  `docs/format/04-msprofile.md`). The reader detects the encoding per
+  block. All 192,503 blocks in the 13 corpus bundles decode, and every
+  scan's summed intensity and maximum equal the stored `TIC` and
+  `BasePeakValue` exactly. A block that fails to decode is logged and
+  counted in `Reader::profile_decode_failures()`. New public items:
+  `raw::msprofile::ProfileEncoding`, `raw::msprofile::RUN_LENGTH_MARKER`,
+  `raw::msprofile::decode_run_length`. New corpus test
+  `tests/profile_run_length.rs` and `spectra_digest` example (digest of
+  a bundle's full reader output, for comparing builds).
 - `RunMetadata` now reports `MS:1001509` (Agilent MassHunter format) and
   `MS:1001508` (Agilent MassHunter nativeID format). It previously used
   `MS:1002846` and `MS:1002848`, which are PRIDE file-URI terms.

@@ -35,7 +35,7 @@ Optional Python bindings are available via the
 | --------------------------------------------- | --------- |
 | `MSScan.bin` (per-scan index)                 | supported |
 | `MSPeak.bin` (centroid/MRM peak data)         | supported |
-| `MSProfile.bin` (profile-mode data, LZF)      | supported |
+| `MSProfile.bin` (profile-mode data, LZF and run-length) | supported |
 | `MSPeriodicActuals.bin` (instrument telemetry)| documented, not yet exposed via the reader API |
 | `MSMassCal.bin` / `DefaultMassCal.xml` (Q-TOF calibration) | supported |
 | Q-TOF Auto-MS/MS precursor m/z                | supported |

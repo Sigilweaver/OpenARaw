@@ -8,8 +8,10 @@ Each `SpectrumRecord` yielded by `iter_spectra` has its `mz`/`intensity`
 arrays filled from one of two on-disk payload files, chosen by the
 `SpectrumParamsType` block(s) recorded for that scan in `MSScan.bin`:
 
-- **`MSProfile.bin`** (profile mode) - LZF-compressed blocks holding a
-  flight-time axis (`x0`, sampling period `dx`) and `int32` intensities.
+- **`MSProfile.bin`** (profile mode) - blocks holding a flight-time axis
+  (`x0`, sampling period `dx`) and one integer intensity per point,
+  LZF-compressed (acquisition software B.05 to B.09) or run-length
+  encoded (10.1).
   The reader converts the axis to m/z with the scan's calibration. See [MSProfile.bin](../format/msprofile).
 - **`MSPeak.bin`** (centroid or MRM) - peak lists. Q-TOF centroid data is
   stored as parallel arrays (flight-time array, then intensity array) and
