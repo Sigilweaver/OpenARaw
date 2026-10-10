@@ -104,7 +104,7 @@ impl MSScan {
 
                         if (ms_level_2 == 1 || ms_level_2 == 2)
                             && next_scan_id > first_scan_id
-                            && next_scan_id < first_scan_id + 100000
+                            && next_scan_id < first_scan_id.saturating_add(100000)
                         {
                             stride = *s;
                             break;
@@ -283,6 +283,16 @@ mod tests {
             assert_eq!(scan.records[0].scan_id, 1);
             assert_eq!(scan.records[1].scan_id, 2);
         }
+    }
+
+    /// A first ScanID near `u32::MAX` must not overflow the stride probe's
+    /// `first_scan_id.saturating_add(100000)` window (a panic in debug builds).
+    #[test]
+    fn stride_probe_does_not_overflow_on_large_first_scan_id() {
+        let bytes = msscan_bytes(284, &[(u32::MAX - 100, 1), (u32::MAX - 99, 1)]);
+        let scan = MSScan::from_bytes(&bytes).expect("parse");
+        assert_eq!(scan.stride, 284);
+        assert_eq!(scan.records.len(), 2);
     }
 
     #[test]
