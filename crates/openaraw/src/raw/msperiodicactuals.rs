@@ -11,7 +11,7 @@
 //!
 //! Confirmed with zero exceptions across all 243 corpus files carrying
 //! this bin: `Magic` (int32) = 265 at offset 0, a fixed 68-byte global
-//! header (not a size field - see note on the old implementation below),
+//! header (not a size field - see `HEADER_SIZE` below),
 //! and a 20-byte record stride with a 4-byte trailer
 //! (`(FileSize - 68) % 20 == 4` always). Full record layout is documented
 //! in `docs/format/02-secondary-bins.md`.
@@ -37,10 +37,9 @@
 use byteorder::{ByteOrder, LittleEndian};
 use std::path::Path;
 
-/// Fixed size of the global header. Earlier code treated the `u32` at file
-/// offset 0x44 as a dynamic `global_header_size`, but that value is always
-/// `1` across the corpus - it's the leading field of the first record
-/// bleeding through, not a size. The header is a constant 68 bytes.
+/// Fixed size of the global header: a constant 68 bytes. The `u32` at file
+/// offset 0x44 is not a header size field; it is always `1` across the
+/// corpus because it is the leading field of the first record.
 const HEADER_SIZE: usize = 68;
 const RECORD_STRIDE: usize = 20;
 

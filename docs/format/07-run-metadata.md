@@ -76,23 +76,26 @@ files but some bundles (e.g. PXD011212, PXD012013) number the MS device
 `DeviceID="1"` while non-MS devices jump to `DeviceID="11"`+; document
 order, not the `DeviceID` value, is what's consistent.
 
-`<ModelNumber>` is the real vendor-assigned instrument identifier and is
-what `openaraw` now maps to a PSI-MS CV term (see
-`instrument_cv_for_model` in `crates/openaraw/src/reader.rs`), replacing
-the previous guess that only distinguished "record stride >= 220" (Q-TOF)
-from "record stride < 220" (QQQ) and tagged either case with the same
-generic `MS:1000461` CV term.
+`<ModelNumber>` is the real vendor-assigned instrument identifier, and
+`openaraw` maps it to a PSI-MS CV term (see `instrument_cv_for_model` in
+`crates/openaraw/src/reader.rs`).
 
 The first device's `<Name>` (`QTOF` or `TandemQuadrupole`, per the table
-above) similarly now drives the per-spectrum `SpectrumRecord::analyzer`
-field (see `resolve_analyzer` in `crates/openaraw/src/reader.rs`),
-replacing the same record-stride guess for that field too. Both
-`resolve_instrument` and `resolve_analyzer` fall back to their respective
-stride-based guesses under the same conditions: `Devices.xml` missing,
-unparseable, or naming a first device outside the two known values.
+above) sets the per-spectrum `SpectrumRecord::analyzer` field (see
+`resolve_analyzer` in `crates/openaraw/src/reader.rs`).
 
-Not every model number in the corpus has a dedicated PSI-MS CV term as
-of `psi-ms.obo`'s current revision - `G6540A`/`G6540B` only have the
+When `Devices.xml` is missing, unparseable, or its first device lacks a
+non-empty `<Name>` or `<ModelNumber>`, both `resolve_instrument` and
+`resolve_analyzer` fall back to the `MSScan.bin` record stride: a stride
+of 220 or more is treated as Q-TOF (analyzer TOFMS) and a narrower stride
+as QQQ (analyzer TQMS), and the instrument is tagged with the generic
+`MS:1000461` CV term in either case. `resolve_analyzer` also uses this
+fallback when the first device's `<Name>` is neither `QTOF` nor
+`TandemQuadrupole`; `resolve_instrument` still maps the `<ModelNumber>`
+in that case.
+
+Not every model number in the corpus has a dedicated PSI-MS CV term
+in the current revision of `psi-ms.obo` - `G6540A`/`G6540B` only have the
 unsuffixed `6540 Q-TOF LC/MS` (`MS:1002789`) at the family level, and
 `G6550B` has no entry at all (only `6550`/`6550A`). For these, the reader
 falls back to the generic `MS:1000490` "Agilent instrument model" term
