@@ -8,7 +8,7 @@
 //! cargo run --release --example spectra_digest -- run.d...
 //! ```
 //!
-//! Prints one tab-separated line per bundle: path, spectra, points,
+//! Prints one tab-separated line per bundle: path, decoded spectra, points,
 //! profile failures, centroid failures, digest. The digest is a 64-bit
 //! FNV-1a variant over the `Debug` text of the metadata and each record
 //! (arrays excluded) and the little-endian bytes of the arrays; compare
@@ -62,7 +62,16 @@ fn main() {
         digest.bytes(format!("{:?}", reader.run_metadata()).as_bytes());
         let mut spectra = 0usize;
         let mut points = 0usize;
-        for mut spectrum in reader.iter_spectra() {
+        for item in reader.iter_spectra() {
+            let mut spectrum = match item {
+                Ok(spectrum) => spectrum,
+                Err(err) => {
+                    // Failed scans are counted below (decode-failure
+                    // counters) and hashed by their message.
+                    digest.bytes(format!("error: {err}").as_bytes());
+                    continue;
+                }
+            };
             spectra += 1;
             points += spectrum.mz.len();
             let mz = std::mem::take(&mut spectrum.mz);

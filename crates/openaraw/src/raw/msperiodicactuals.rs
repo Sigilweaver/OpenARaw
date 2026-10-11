@@ -44,6 +44,7 @@ const HEADER_SIZE: usize = 68;
 const RECORD_STRIDE: usize = 20;
 
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct ActualsRecord {
     /// Telemetry channel ID; defined per-instrument in `MSActualDefs.xml`
     /// (e.g. 27 = Gas Temp, 29 = Rough Vac, 57 = Charge State).
@@ -51,10 +52,16 @@ pub struct ActualsRecord {
     pub retention_time_min: f64,
 }
 
+/// Parse `MSPeriodicActuals.bin`. A file shorter than its 68-byte header
+/// is an error. Bytes after the last whole 20-byte record (the 4-byte
+/// trailer) are not read.
 pub fn parse(path: &Path) -> crate::Result<Vec<ActualsRecord>> {
     let bytes = std::fs::read(path)?;
     if bytes.len() < HEADER_SIZE {
-        return Ok(vec![]);
+        return Err(crate::Error::Parse(format!(
+            "MSPeriodicActuals.bin is {} bytes, shorter than its {HEADER_SIZE}-byte header",
+            bytes.len()
+        )));
     }
 
     let payload = &bytes[HEADER_SIZE..];
@@ -131,11 +138,11 @@ mod tests {
     }
 
     #[test]
-    fn file_smaller_than_header_returns_no_records() {
+    fn file_smaller_than_header_is_an_error() {
         let bytes = vec![0u8; HEADER_SIZE - 1];
         let path = write_temp("truncated.bin", &bytes);
-        let records = parse(&path).expect("parse should succeed");
+        let result = parse(&path);
         let _ = std::fs::remove_file(&path);
-        assert!(records.is_empty());
+        assert!(result.is_err());
     }
 }

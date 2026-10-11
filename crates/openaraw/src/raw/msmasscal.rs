@@ -12,6 +12,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use std::path::Path;
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct MassCalRecord {
     pub coefficients: Vec<f64>,
 }

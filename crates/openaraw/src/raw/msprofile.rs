@@ -34,6 +34,7 @@ pub const RUN_LENGTH_MARKER: [u8; 4] = [0x00, 0xff, 0x02, 0x90];
 
 /// How a profile block stores its axis header and intensities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ProfileEncoding {
     /// Raw LZF stream of the axis header and int32 intensities.
     Lzf,
@@ -61,6 +62,7 @@ impl ProfileEncoding {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ProfileSpectrum {
     pub mz: Vec<f64>,
     pub intensity: Vec<f32>,
@@ -68,6 +70,7 @@ pub struct ProfileSpectrum {
 
 /// The flight-time axis header of a profile block.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub struct ProfileAxis {
     /// Flight time of point 0.
     pub x0: f64,

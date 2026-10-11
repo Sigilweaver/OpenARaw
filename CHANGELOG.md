@@ -7,16 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-This release changes the public Rust API (see Changed and Removed) and
-ships as 0.3.0.
+This release changes the public Rust API (see Breaking, Changed and
+Removed) and ships as 1.0.0. From 1.0.0 on, fixes and new fields ship as
+minor or patch releases.
+
+### Breaking
+
+- Requires `openmassspec-core` 3.0.0. `Reader::iter_spectra` yields
+  `openmassspec_core::Result<SpectrumRecord>` and `iter_chromatograms`
+  yields `openmassspec_core::Result<ChromatogramRecord>`.
+- A scan whose payload block cannot be read or decoded is yielded as an
+  `Err` (wrapping the new `Error::Scan { scan_id, block, source }`)
+  instead of a spectrum with empty arrays. This includes Q-TOF scans
+  without a usable mass calibration. A failed profile block no longer
+  falls back to the scan's centroid block. In the corpus this affects
+  `PXD022473/M.d` (no `MSProfile.bin`) and `PXD031771/655_2.d` (no
+  calibration). `openmassspec_core::write_mzml` now stops at the first
+  such scan; pass `RecordErrorPolicy::Skip` to write the rest.
+- `iter_chromatograms` yields a single `Err` when any spectrum fails to
+  decode, instead of TIC/BPC traces with zero points for failed scans.
+- `openaraw::Error` is `#[non_exhaustive]` and has a new `Scan` variant.
+  `From<openaraw::Error> for openmassspec_core::Error` is implemented
+  (`Io` maps to `Error::Io`, the rest to `Error::Vendor`).
+- `Reader` fields `dir`, `bundle_name`, `msscan` and `device` are
+  private. Use the new `Reader::dir()`, `Reader::bundle_name()`,
+  `Reader::msscan()` and `Reader::device()` accessors.
+- `#[non_exhaustive]` on the public enums `raw::calibration::CalibrationSource`
+  and `raw::msprofile::ProfileEncoding`, and on the public structs
+  `raw::msscan::{MSScan, ScanRecord, SpectrumParams}`,
+  `raw::metadata::DeviceInfo`,
+  `raw::calibration::{TofCalibration, PolynomialStep}`,
+  `raw::defaultmasscal::DefaultCalibration`,
+  `raw::msmasscal::MassCalRecord`, `raw::mspeak::PeakSpectrum`,
+  `raw::msprofile::{ProfileSpectrum, ProfileAxis}` and
+  `raw::msperiodicactuals::ActualsRecord`. Fields stay public and
+  readable; struct literals and exhaustive matches outside the crate no
+  longer compile.
+- `raw::msperiodicactuals::parse` returns an error for a file shorter
+  than its 68-byte header instead of an empty list.
+- Python: `RawReader(path)` raises `RuntimeError` when any scan cannot be
+  decoded; `iter_spectra(path)` raises when it reaches such a scan; and
+  `read_chromatograms()` raises instead of returning traces with zero
+  points. Other Python names and return types are unchanged.
 
 ### Added
 
+- Spectrum polarity. `SpectrumRecord::polarity` is set from the scan
+  record's `IonPolarity` field, located by the field order of the
+  bundle's own `MSScan.xsd` (int32 at offset 64; int16 at offset 62 for
+  stride 186) and decoded as `0` positive, `1` negative per
+  `MSActualDefs.xml`. Other values leave `polarity` unset, put the raw
+  value in `extra["openaraw.ion_polarity"]` and are logged at warn level.
+  New public items: `ScanRecord::ion_polarity`, `ScanRecord::polarity()`;
+  Python `scan_index()` records gain `ion_polarity`. Checked on all 332
+  corpus bundles: only `0` and `1` occur, matching each method's
+  `ionPolarity` settings. Six PXD031771 runs switch polarity by time
+  segment (228 negative scan records, 190 of them decodable spectra;
+  `655_2.d` has no calibration); every other bundle is positive. New
+  corpus test `tests/polarity.rs`.
 - `Reader::profile_decode_failures()` and
-  `Reader::centroid_decode_failures()` count spectrum payload blocks that
-  failed to read or decode. Failures are logged through the `log` crate
-  (first per kind at warn, the rest at debug) instead of being dropped
-  silently. New dependency: `log` 0.4.
+  `Reader::centroid_decode_failures()` count the scans yielded as errors
+  because a payload block failed to read or decode. Failures are logged
+  through the `log` crate (first per kind at warn, the rest at debug).
+  New dependency: `log` 0.4.
+- `raw::calibration::CalibrationSource::as_str()`.
 - Q-TOF flight-time calibration. Centroid x-values and the profile axis
   are converted with `m/z = (A * (t - T0))^2 - P(clamp(t, t_min, t_max))`,
   where the `Polynomial` step's powers are the set bits of its
@@ -45,6 +99,9 @@ ships as 0.3.0.
 
 ### Changed
 
+- README "Known issues and gaps": measured Q-TOF m/z accuracy and the
+  runs that read 10 to 20 ppm off, stored precursor m/z versus MS1,
+  product-only MRM spectra, bundles that raise errors, and corpus gaps.
 - Breaking: `raw::mspeak::decode_peak_block` takes an
   `Option<&TofCalibration>` (required for Q-TOF blocks), and
   `raw::msprofile::decode_profile_block` takes a `&TofCalibration`
@@ -67,13 +124,18 @@ ships as 0.3.0.
 
 ### Fixed
 
+- `SpectrumRecord::polarity` was `None` for every spectrum, so mzML
+  output carried no polarity term; it is now decoded (see Added).
 - Bundles without a usable `Devices.xml` and with 216-byte `MSScan.bin`
   records are labeled Q-TOF (`TOFMS`, "Agilent Q-TOF") instead of QQQ.
   The record-size fallback treats 216, 220 and 284 as Q-TOF and 186 and
   196 as QQQ. Affected `PXD031771/655_2.d` in the corpus.
 - Q-TOF centroid m/z is no longer the raw flight time divided by 100,
-  and Q-TOF payloads without a usable calibration are counted as decode
-  failures instead of being reported as m/z.
+  and Q-TOF payloads without a usable calibration are errors instead of
+  being reported as m/z.
+- A scan whose profile block holds no points and which has a centroid
+  block is labelled centroid (it carries the centroid data); it was
+  labelled profile.
 - Profile blocks: the LZF stream starts at byte 0 of the block and
   decompresses to an `f64` start time and `f64` sampling period followed
   by the intensities; the old 16-byte-preamble layout failed on every
@@ -86,8 +148,7 @@ ships as 0.3.0.
   `docs/format/04-msprofile.md`). The reader detects the encoding per
   block. All 192,503 blocks in the 13 corpus bundles decode, and every
   scan's summed intensity and maximum equal the stored `TIC` and
-  `BasePeakValue` exactly. A block that fails to decode is logged and
-  counted in `Reader::profile_decode_failures()`. New public items:
+  `BasePeakValue` exactly. A block that fails to decode is an error. New public items:
   `raw::msprofile::ProfileEncoding`, `raw::msprofile::RUN_LENGTH_MARKER`,
   `raw::msprofile::decode_run_length`. New corpus test
   `tests/profile_run_length.rs` and `spectra_digest` example (digest of

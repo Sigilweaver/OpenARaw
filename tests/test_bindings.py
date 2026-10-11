@@ -32,6 +32,26 @@ def test_decoded_fields():
     first = reader.read_spectrum(0)
     streamed = next(openaraw.iter_spectra(str(path)))
     assert first.native_id == streamed.native_id
+    # IonPolarity 0 is positive, 1 negative; other values leave it None.
+    raw = index["records"][0]["ion_polarity"]
+    assert first.polarity == {0: "positive", 1: "negative"}.get(raw)
     assert len(first.mz) == len(first.intensity)
     for chrom in reader.read_chromatograms():
         assert len(chrom["time_sec"]) == len(chrom["intensity"])
+
+
+def test_undecodable_scans_raise():
+    # PXD022473/M.d: scan records point into an MSProfile.bin the upload
+    # lacks, so no scan can be decoded.
+    root = os.environ.get("OPENARAW_CORPUS")
+    if not root:
+        pytest.skip("set OPENARAW_CORPUS to the research corpus root")
+    path = Path(root) / "PXD022473" / "M.d"
+    if not path.is_dir():
+        if os.environ.get("REQUIRE_CORPUS") == "1":
+            pytest.fail(f"REQUIRE_CORPUS=1 but bundle {path} is missing")
+        pytest.skip(f"{path} is missing")
+    with pytest.raises(RuntimeError, match="profile block"):
+        openaraw.RawReader(str(path))
+    with pytest.raises(RuntimeError, match="profile block"):
+        next(openaraw.iter_spectra(str(path)))

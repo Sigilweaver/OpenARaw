@@ -9,6 +9,7 @@ use crate::raw::msscan::SpectrumParams;
 use byteorder::{ByteOrder, LittleEndian};
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct PeakSpectrum {
     pub mz: Vec<f64>,
     pub intensity: Vec<f32>,

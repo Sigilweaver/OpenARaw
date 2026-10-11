@@ -54,7 +54,7 @@ fn check_blocks(bundle: &str) -> Option<usize> {
     let mut worst_ppm = 0.0f64;
     let mut checked = 0usize;
     let mut failures = Vec::new();
-    for rec in &reader.msscan.records {
+    for rec in &reader.msscan().records {
         let params = rec.profile_params.as_ref().expect("profile block");
         let block = read_bytes(&profile_path, params.offset, params.byte_count as usize)
             .expect("read block");
@@ -108,7 +108,7 @@ fn check_blocks(bundle: &str) -> Option<usize> {
     eprintln!(
         "{}: {checked} of {} scans decoded, worst base peak |ppm| {worst_ppm:.6}",
         path.display(),
-        reader.msscan.records.len()
+        reader.msscan().records.len()
     );
     assert!(
         failures.is_empty(),
@@ -116,7 +116,7 @@ fn check_blocks(bundle: &str) -> Option<usize> {
         failures.len(),
         &failures[..failures.len().min(5)]
     );
-    assert_eq!(checked, reader.msscan.records.len());
+    assert_eq!(checked, reader.msscan().records.len());
     assert!(checked > 0);
     Some(checked)
 }
@@ -159,6 +159,7 @@ fn pxd044639_reader_output() {
     let mut reader = Reader::open(&path).expect("open bundle");
     let mut spectra = 0usize;
     for spectrum in reader.iter_spectra() {
+        let spectrum = spectrum.expect("spectrum decodes");
         spectra += 1;
         assert_eq!(spectrum.scan_mode, Some(ScanMode::Profile));
         assert!(!spectrum.mz.is_empty(), "{}", spectrum.native_id);
@@ -171,7 +172,7 @@ fn pxd044639_reader_output() {
             spectrum.native_id
         );
     }
-    assert_eq!(spectra, reader.msscan.records.len());
+    assert_eq!(spectra, reader.msscan().records.len());
     assert_eq!(reader.profile_decode_failures(), 0);
     assert_eq!(reader.centroid_decode_failures(), 0);
 }

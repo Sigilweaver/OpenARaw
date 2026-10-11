@@ -10,25 +10,11 @@ Some files uploaded to PRIDE are structurally malformed, missing the mandatory `
 - **PXD041903**: `20190423_Alex11.d`, `20190423_Alex3.d`, `20190423_Alex7.d` (Double-nested folders missing `AcqData` in the top level).
 - **PXD049393**: `__MACOSX/2022-07-07_sequence1.d`, `__MACOSX/2023-03-01_sequence1.d`, `__MACOSX/2023-07-12_sequence1.d` (macOS filesystem artifacts rather than real datasets).
 
-## 2. Spectrum Fields Not Populated From `MSScan.bin`
+## 2. `selected_mz` Not Populated From `MSScan.bin`
 
-`SpectrumRecord::polarity` and `PrecursorInfo::selected_mz` are always
-`None` in the reader's output. `polarity` is recoverable but not
-mapped; no source for `selected_mz` is known:
+`PrecursorInfo::selected_mz` is always `None` in the reader's output; no
+source for it is known:
 
-- **`polarity`**: recoverable from record offset 64 (`int32`). The
-  `MSScan.xsd` shipped inside each bundle lists the `ScanRecord` fields
-  in order, and `IonPolarity` lands at offset 64 (after `ScanID`,
-  `ScanMethodID`, `TimeSegmentID`, `ScanTime`, `MSLevel`, `ScanType`,
-  `TIC`, `BasePeakMZ`, `BasePeakValue`, `CalibrationID`, `CycleNumber`,
-  `IonMode`). The same field order puts `CollisionEnergy` at offset 76,
-  which the reader already decodes. Corpus check on
-  `PXD031771/526b_1.d`, whose `AcqMethod.xml` defines time segments
-  Positive (0-0.1 min), Negative (0.1-0.5 min), Positive (0.5 min on):
-  offset 64 reads `0` for scans at 0.04-0.12 min, `1` for 38 scans at
-  0.22-0.53 min, and `0` for every scan after that. This matches
-  `MSActualDefs.xml`'s `"0=Postive,1=Negative"` encoding. The reader
-  does not map it to `SpectrumRecord::polarity`.
 - **`selected_mz`**: distinct from `target_mz` (the isolation window
   center, which the reader already exposes via
   `PrecursorInfo::target_mz`). No `f32`/`f64` offset in the record holds
@@ -94,15 +80,14 @@ than be backed by an unverified field guess.
 ## 4. Q-TOF Calibration Files and Missing Profile Data
 
 - **Q-TOF bundles with neither `MSMassCal.bin` nor `DefaultMassCal.xml`
-  yield empty spectra.** Without either file there is no calibration to
-  convert flight times to m/z. The reader logs this, emits the scans with
-  empty arrays, and counts each block in
-  `Reader::centroid_decode_failures()` /
-  `Reader::profile_decode_failures()`; flight times are never reported as
-  m/z. One corpus bundle is affected: `PXD031771/655_2.d`, which also
+  cannot be decoded.** Without either file there is no calibration to
+  convert flight times to m/z. `iter_spectra` yields an error for each
+  scan (counted in `Reader::profile_decode_failures()` /
+  `Reader::centroid_decode_failures()`); flight times are never reported
+  as m/z. One corpus bundle is affected: `PXD031771/655_2.d`, which also
   lacks `Devices.xml` and the other method files.
 - **`PXD022473/M.d` has no `MSProfile.bin`** although its scan records
-  point into one (profile data only). Every scan is logged, counted as a
-  profile decode failure and emitted empty. This is a defect of the
+  point into one (profile data only). Every scan is yielded as an error
+  and counted as a profile decode failure. This is a defect of the
   upload, not a format variant.
 - QQQ (MRM) centroid data stores m/z directly and is unaffected.

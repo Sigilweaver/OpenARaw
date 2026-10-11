@@ -48,6 +48,32 @@ All fields are little-endian. Offsets are relative to the start of each scan rec
 **Field confirmed at record offset 20:**
 - `MSLevel` (int16, not int32 - the upper two bytes at offset 22 belong to a separate field): 1 for MS1, 2 for MS2. Observed in Q-TOF (PXD001310) where scan 8 had MSLevel=2 and had a precursor ion listed at other offsets.
 
+**Field confirmed at record offset 64 (62 for stride 186):**
+- `IonPolarity`: `0` positive, `1` negative. Exposed as
+  `SpectrumRecord::polarity`; any other value leaves it `None` (the raw
+  value goes to `extra["openaraw.ion_polarity"]` and is logged).
+  - Position: the bundle's own `MSScan.xsd` lists `ScanRecordType` fields
+    in order, and `IonPolarity` follows `IonMode`. With the declared types
+    packed, that is an int32 at offset 64 for strides 196, 216, 220 and
+    284, and an int16 at offset 62 for stride 186, whose schema declares
+    `MSLevel` and `IonPolarity` as `xs:short`. The same packing places
+    the stride-186 and stride-196 `SpectrumParamsType` blocks at 136 and
+    144, where the reader finds them. Every one of the 332 corpus bundles
+    with an `MSScan.bin` carries an `MSScan.xsd` that gives this position
+    for its stride.
+  - Encoding: `MSActualDefs.xml` describes the "Ion Polarity" actual as
+    `0=Postive,1=Negative`.
+  - Corpus check (all 332 bundles, 10.0 M records): only `0` and `1`
+    occur. In the 331 bundles with method XML (`ionPolarity` per time
+    segment in Q-TOF `AcqMethod.xml`, per transition in QQQ
+    `acqmethod.xml`), the method lists `Negative` exactly in the bundles
+    where `1` occurs. Those are the six PXD031771 bundles, which switch by
+    time segment (`AcqMethod.xml`: Positive from 0 min, Negative from
+    0.1 min, Positive from 0.5 and 18 min); in each, the 38 records with
+    `TimeSegmentID` 2 (0.22 to 0.53 min) read `1` and all others `0`.
+    `PXD031771/655_2.d` has no method XML but the same pattern. Every
+    other bundle is positive only.
+
 **Q-TOF-specific fields:**
 - Offsets 28-55: summary fields, in the order the bundle's own `MSScan.xsd`
   lists for `ScanRecord` (`ScanID`, `ScanMethodID`, `TimeSegmentID`,
@@ -63,7 +89,7 @@ All fields are little-endian. Offsets are relative to the start of each scan rec
   - Offset 52: `CalibrationID` (int32). The `DefaultCalibrationID` in
     `DefaultMassCal.xml` that the scan uses (see `05-msmasscal.md`).
     Exposed as `extra["openaraw.calibration_id"]`.
-  - Offset 64: `IonPolarity` (int32), see `06-known-limitations.md`.
+  - Offset 64: `IonPolarity` (int32), see above.
   - The stride-284 values were checked on PXD001310 (offset 44 against
     decoded intensities). For strides 216/220 the offsets follow from the
     `MSScan.xsd` field order and the offset-64 check on PXD031771.

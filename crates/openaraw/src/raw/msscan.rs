@@ -1,9 +1,11 @@
 //! MSScan.bin index parsing.
 
 use byteorder::{ByteOrder, LittleEndian};
+use openmassspec_core::Polarity;
 use std::path::Path;
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct SpectrumParams {
     pub format_id: u32,
     pub offset: u64,
@@ -13,6 +15,7 @@ pub struct SpectrumParams {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ScanRecord {
     pub scan_id: u32,
     pub retention_time_min: f64,
@@ -30,6 +33,13 @@ pub struct ScanRecord {
     pub base_peak_intensity: Option<f64>,
     /// `CalibrationID` (record offset 52, int32). Q-TOF records only.
     pub calibration_id: Option<i32>,
+    /// Raw `IonPolarity` value. The bundle's own `MSScan.xsd` lists it in
+    /// `ScanRecordType` after `IonMode`: an int32 at record offset 64 for
+    /// strides 196, 216, 220 and 284, and an int16 at offset 62 for stride
+    /// 186, whose schema declares `MSLevel` and `IonPolarity` as
+    /// `xs:short`. `0` is positive and `1` negative (see
+    /// [`ScanRecord::polarity`]).
+    pub ion_polarity: i32,
     pub mrm_channel_id: Option<u32>,
     pub target_mz: Option<f64>,
     /// Precursor collision energy in eV (record offset 76, f64). Confirmed
@@ -40,12 +50,27 @@ pub struct ScanRecord {
     pub centroid_params: Option<SpectrumParams>,
 }
 
+impl ScanRecord {
+    /// Ion polarity from [`ScanRecord::ion_polarity`]: `0` is positive and
+    /// `1` negative, the encoding the bundle's `MSActualDefs.xml` gives for
+    /// the "Ion Polarity" actual (`0=Postive,1=Negative`). Any other value
+    /// is not interpreted and returns `None`.
+    pub fn polarity(&self) -> Option<Polarity> {
+        match self.ion_polarity {
+            0 => Some(Polarity::Positive),
+            1 => Some(Polarity::Negative),
+            _ => None,
+        }
+    }
+}
+
 /// Record strides of Q-TOF acquisitions (see `docs/format/01-msscan.md`).
 pub fn is_qtof_stride(stride: u32) -> bool {
     matches!(stride, 216 | 220 | 284)
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct MSScan {
     pub global_header_size: u32,
     pub stride: u32,
@@ -141,6 +166,14 @@ impl MSScan {
             };
             let retention_time_min = LittleEndian::read_f64(&record_bytes[12..20]);
             let ms_level = LittleEndian::read_u16(&record_bytes[20..22]) as u32;
+            // IonPolarity: the field after IonMode in the bundle's
+            // MSScan.xsd ScanRecordType. Stride 186 packs MSLevel and
+            // IonPolarity as int16, which puts it at 62.
+            let ion_polarity = if stride == 186 {
+                i32::from(LittleEndian::read_i16(&record_bytes[62..64]))
+            } else {
+                LittleEndian::read_i32(&record_bytes[64..68])
+            };
 
             let mut min_x = None;
             let mut max_x = None;
@@ -239,6 +272,7 @@ impl MSScan {
                 base_peak_mz,
                 base_peak_intensity,
                 calibration_id,
+                ion_polarity,
                 mrm_channel_id,
                 target_mz,
                 collision_energy,
@@ -342,6 +376,34 @@ mod tests {
                 "stride {stride}"
             );
             assert_eq!(rec.calibration_id, Some(3), "stride {stride}");
+        }
+    }
+
+    /// `IonPolarity` follows `IonMode` in the bundle's MSScan.xsd: int32 at
+    /// offset 64, except stride 186 where it is int16 at offset 62.
+    #[test]
+    fn parses_ion_polarity_for_every_stride() {
+        for &stride in &[284u32, 220, 216, 196, 186] {
+            let mut bytes = header();
+            for value in [0i32, 1, 7] {
+                let mut r = record(stride as usize, value as u32 + 1, 1);
+                if stride == 186 {
+                    LittleEndian::write_i16(&mut r[62..64], value as i16);
+                } else {
+                    LittleEndian::write_i32(&mut r[64..68], value);
+                }
+                bytes.extend(r);
+            }
+            let scan = MSScan::from_bytes(&bytes).unwrap();
+            assert_eq!(scan.stride, stride);
+            let raw: Vec<i32> = scan.records.iter().map(|r| r.ion_polarity).collect();
+            assert_eq!(raw, [0, 1, 7], "stride {stride}");
+            let polarity: Vec<_> = scan.records.iter().map(ScanRecord::polarity).collect();
+            assert_eq!(
+                polarity,
+                [Some(Polarity::Positive), Some(Polarity::Negative), None],
+                "stride {stride}"
+            );
         }
     }
 

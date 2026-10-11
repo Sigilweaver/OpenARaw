@@ -151,7 +151,7 @@ pub struct Report {
 /// `DefaultMassCal.xml` calibrations by `DefaultCalibrationID`; empty if
 /// the file is missing or invalid.
 fn default_calibrations(reader: &Reader) -> HashMap<i32, TofCalibration> {
-    let path = reader.dir.join("AcqData").join("DefaultMassCal.xml");
+    let path = reader.dir().join("AcqData").join("DefaultMassCal.xml");
     defaultmasscal::parse(&path)
         .map(|cals| {
             cals.iter()
@@ -164,7 +164,7 @@ fn default_calibrations(reader: &Reader) -> HashMap<i32, TofCalibration> {
 /// Evaluate every scan. `profile` controls whether profile blocks are
 /// decoded (they dominate the run time on large bundles).
 pub fn evaluate(reader: &Reader, profile: bool) -> Report {
-    let acq = reader.dir.join("AcqData");
+    let acq = reader.dir().join("AcqData");
     let peak_path = acq.join("MSPeak.bin");
     let profile_path = acq.join("MSProfile.bin");
     let defaults = default_calibrations(reader);
@@ -181,7 +181,7 @@ pub fn evaluate(reader: &Reader, profile: bool) -> Report {
     let mut reference: Vec<Vec<f64>> = vec![Vec::new(); REFERENCE_IONS.len()];
     let mut report = Report::default();
 
-    for (index, rec) in reader.msscan.records.iter().enumerate() {
+    for (index, rec) in reader.msscan().records.iter().enumerate() {
         report.scans += 1;
         if rec.ms_level == 1 {
             report.ms1_scans += 1;
@@ -193,6 +193,7 @@ pub fn evaluate(reader: &Reader, profile: bool) -> Report {
         match cal.source {
             CalibrationSource::MassCalRecord => report.record_calibrated += 1,
             CalibrationSource::DefaultMassCal => report.default_calibrated += 1,
+            other => panic!("unexpected calibration source {other:?}"),
         }
         let stored_bp = rec.base_peak_mz.filter(|v| *v > 0.0);
         let stored_tic = rec.tic.filter(|v| *v > 0.0);

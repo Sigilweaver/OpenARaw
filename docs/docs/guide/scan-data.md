@@ -22,14 +22,15 @@ arrays filled from one of two on-disk payload files, chosen by the
 Each Q-TOF scan uses its own `MSMassCal.bin` record (reference-mass
 corrected) or, when the bundle has none, the `DefaultMassCal.xml` entry
 for its `CalibrationID`; `Reader::calibration(i)` reports which. A Q-TOF
-scan without a usable calibration is emitted with empty arrays and
-counted as a decode failure. See [MSMassCal.bin](../format/msmasscal)
+scan without a usable calibration is yielded as an error. See [MSMassCal.bin](../format/msmasscal)
 and [Known limitations](../format/known-limitations).
 
 If a scan has both a profile and a centroid block (seen on some Q-TOF
-acquisitions), the reader prefers profile data and falls back to centroid
-only if the profile block is missing or fails to decode. Decode failures
-are logged and counted (`Reader::profile_decode_failures()`,
+acquisitions), the reader uses the profile block, and the centroid block
+only when the profile block holds no points. A block that cannot be read
+or decoded makes the scan an error (`openaraw::Error::Scan`); the reader
+does not fall back from a failed profile block to the centroid block.
+Failures are logged and counted (`Reader::profile_decode_failures()`,
 `Reader::centroid_decode_failures()`).
 
 ## Precursor information
@@ -43,6 +44,14 @@ MS2+ spectra populate `SpectrumRecord.precursor`:
   MS2 scan corresponds to one MRM transition, identified by a channel ID.
   The reader surfaces this as `precursor_native_id` (`mrm_channel=<id>`)
   rather than a `target_mz`.
+
+## Polarity
+
+`polarity` comes from the scan record's `IonPolarity` field (`0`
+positive, `1` negative), so runs that switch polarity by time segment
+report it per spectrum. Any other value leaves `polarity` as `None`, with
+the raw value in `extra["openaraw.ion_polarity"]`. See
+[MSScan.bin](../format/msscan).
 
 ## Retention time
 
