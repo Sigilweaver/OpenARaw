@@ -51,6 +51,19 @@ Removed) and ships as 0.3.0.
 
 ### Added
 
+- Spectrum polarity. `SpectrumRecord::polarity` is set from the scan
+  record's `IonPolarity` field, located by the field order of the
+  bundle's own `MSScan.xsd` (int32 at offset 64; int16 at offset 62 for
+  stride 186) and decoded as `0` positive, `1` negative per
+  `MSActualDefs.xml`. Other values leave `polarity` unset, put the raw
+  value in `extra["openaraw.ion_polarity"]` and are logged at warn level.
+  New public items: `ScanRecord::ion_polarity`, `ScanRecord::polarity()`;
+  Python `scan_index()` records gain `ion_polarity`. Checked on all 332
+  corpus bundles: only `0` and `1` occur, matching each method's
+  `ionPolarity` settings. Six PXD031771 runs switch polarity by time
+  segment (228 negative scan records, 190 of them decodable spectra;
+  `655_2.d` has no calibration); every other bundle is positive. New
+  corpus test `tests/polarity.rs`.
 - `Reader::profile_decode_failures()` and
   `Reader::centroid_decode_failures()` count the scans yielded as errors
   because a payload block failed to read or decode. Failures are logged
@@ -107,6 +120,8 @@ Removed) and ships as 0.3.0.
 
 ### Fixed
 
+- `SpectrumRecord::polarity` was `None` for every spectrum, so mzML
+  output carried no polarity term; it is now decoded (see Added).
 - Bundles without a usable `Devices.xml` and with 216-byte `MSScan.bin`
   records are labeled Q-TOF (`TOFMS`, "Agilent Q-TOF") instead of QQQ.
   The record-size fallback treats 216, 220 and 284 as Q-TOF and 186 and

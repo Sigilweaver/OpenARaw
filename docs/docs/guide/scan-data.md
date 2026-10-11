@@ -45,6 +45,14 @@ MS2+ spectra populate `SpectrumRecord.precursor`:
   The reader surfaces this as `precursor_native_id` (`mrm_channel=<id>`)
   rather than a `target_mz`.
 
+## Polarity
+
+`polarity` comes from the scan record's `IonPolarity` field (`0`
+positive, `1` negative), so runs that switch polarity by time segment
+report it per spectrum. Any other value leaves `polarity` as `None`, with
+the raw value in `extra["openaraw.ion_polarity"]`. See
+[MSScan.bin](../format/msscan).
+
 ## Retention time
 
 `retention_time_sec` is `MSScan.bin`'s per-record `RetentionTime` (stored

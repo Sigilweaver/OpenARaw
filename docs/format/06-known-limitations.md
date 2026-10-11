@@ -10,25 +10,11 @@ Some files uploaded to PRIDE are structurally malformed, missing the mandatory `
 - **PXD041903**: `20190423_Alex11.d`, `20190423_Alex3.d`, `20190423_Alex7.d` (Double-nested folders missing `AcqData` in the top level).
 - **PXD049393**: `__MACOSX/2022-07-07_sequence1.d`, `__MACOSX/2023-03-01_sequence1.d`, `__MACOSX/2023-07-12_sequence1.d` (macOS filesystem artifacts rather than real datasets).
 
-## 2. Spectrum Fields Not Populated From `MSScan.bin`
+## 2. `selected_mz` Not Populated From `MSScan.bin`
 
-`SpectrumRecord::polarity` and `PrecursorInfo::selected_mz` are always
-`None` in the reader's output. `polarity` is recoverable but not
-mapped; no source for `selected_mz` is known:
+`PrecursorInfo::selected_mz` is always `None` in the reader's output; no
+source for it is known:
 
-- **`polarity`**: recoverable from record offset 64 (`int32`). The
-  `MSScan.xsd` shipped inside each bundle lists the `ScanRecord` fields
-  in order, and `IonPolarity` lands at offset 64 (after `ScanID`,
-  `ScanMethodID`, `TimeSegmentID`, `ScanTime`, `MSLevel`, `ScanType`,
-  `TIC`, `BasePeakMZ`, `BasePeakValue`, `CalibrationID`, `CycleNumber`,
-  `IonMode`). The same field order puts `CollisionEnergy` at offset 76,
-  which the reader already decodes. Corpus check on
-  `PXD031771/526b_1.d`, whose `AcqMethod.xml` defines time segments
-  Positive (0-0.1 min), Negative (0.1-0.5 min), Positive (0.5 min on):
-  offset 64 reads `0` for scans at 0.04-0.12 min, `1` for 38 scans at
-  0.22-0.53 min, and `0` for every scan after that. This matches
-  `MSActualDefs.xml`'s `"0=Postive,1=Negative"` encoding. The reader
-  does not map it to `SpectrumRecord::polarity`.
 - **`selected_mz`**: distinct from `target_mz` (the isolation window
   center, which the reader already exposes via
   `PrecursorInfo::target_mz`). No `f32`/`f64` offset in the record holds

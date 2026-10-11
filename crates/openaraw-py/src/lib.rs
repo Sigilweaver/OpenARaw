@@ -332,6 +332,7 @@ impl RawReader {
             d.set_item("base_peak_mz", r.base_peak_mz)?;
             d.set_item("base_peak_intensity", r.base_peak_intensity)?;
             d.set_item("calibration_id", r.calibration_id)?;
+            d.set_item("ion_polarity", r.ion_polarity)?;
             d.set_item(
                 "calibration_source",
                 self.reader.calibration(i).map(|c| c.source.as_str()),

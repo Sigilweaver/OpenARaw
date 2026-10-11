@@ -338,6 +338,24 @@ fn load_calibrations(acq: &Path, msscan: &MSScan, bundle: &str) -> Vec<Option<To
     calibrations
 }
 
+/// Log the scans whose `IonPolarity` value is neither 0 nor 1. Their
+/// spectra carry `polarity = None` and the raw value in
+/// `extra["openaraw.ion_polarity"]`.
+fn warn_unknown_polarity(msscan: &MSScan, bundle: &str) {
+    let mut unknown = std::collections::BTreeMap::<i32, usize>::new();
+    for rec in &msscan.records {
+        if rec.polarity().is_none() {
+            *unknown.entry(rec.ion_polarity).or_default() += 1;
+        }
+    }
+    if !unknown.is_empty() {
+        log::warn!(
+            "{bundle}: unrecognized IonPolarity values (value: scans) {unknown:?}; \
+             polarity left unset for those scans"
+        );
+    }
+}
+
 impl Reader {
     pub fn open<P: AsRef<Path>>(dir: P) -> crate::Result<Self> {
         let dir = dir.as_ref().to_path_buf();
@@ -364,6 +382,7 @@ impl Reader {
         let analyzer = resolve_analyzer(device.as_ref(), &msscan);
         let start_timestamp = parse_acquired_time(&acq_data.join("Contents.xml"));
         let calibrations = load_calibrations(&acq_data, &msscan, &bundle_name);
+        warn_unknown_polarity(&msscan, &bundle_name);
 
         Ok(Reader {
             dir,
@@ -549,6 +568,15 @@ impl Reader {
         if let Some(id) = rec.calibration_id {
             extra.insert("openaraw.calibration_id".to_string(), id.to_string());
         }
+        let polarity = rec.polarity();
+        if polarity.is_none() {
+            // Not 0 (positive) or 1 (negative): keep the raw value rather
+            // than guess a polarity.
+            extra.insert(
+                "openaraw.ion_polarity".to_string(),
+                rec.ion_polarity.to_string(),
+            );
+        }
 
         let precursor = (rec.ms_level >= 2).then(|| {
             let mut precursor = PrecursorInfo::default()
@@ -569,10 +597,6 @@ impl Reader {
         });
 
         // Not set:
-        // - polarity: record offset 64 is IonPolarity per the bundle's own
-        //   MSScan.xsd (0 = positive, 1 = negative), corroborated on
-        //   PXD031771/526b_1.d, but not mapped. See
-        //   docs/format/06-known-limitations.md.
         // - inv_mobility / inv_mobility_per_peak: no ion-mobility (6560
         //   IM-QTOF) acquisition exists in the validation corpus to decode
         //   a drift-time field against. See
@@ -581,6 +605,7 @@ impl Reader {
         Ok(
             SpectrumRecord::new(scan_idx, rec.scan_id, format!("scanId={}", rec.scan_id))
                 .with_ms_level(rec.ms_level)
+                .with_polarity(polarity)
                 .with_scan_mode(scan_mode)
                 .with_analyzer(analyzer)
                 .with_retention_time_sec(rec.retention_time_min * 60.0)
@@ -679,6 +704,7 @@ impl SpectrumSource for Reader {
 mod tests {
     use super::*;
     use crate::raw::msscan::ScanRecord;
+    use openmassspec_core::Polarity;
 
     /// Minimal `MSScan` carrying just the field [`resolve_analyzer`] and
     /// [`resolve_instrument`] read: the record stride used for their
@@ -812,6 +838,7 @@ mod tests {
             base_peak_mz: None,
             base_peak_intensity: None,
             calibration_id: None,
+            ion_polarity: 0,
             mrm_channel_id: None,
             target_mz: Some(500.25),
             collision_energy: Some(20.0),
@@ -844,6 +871,7 @@ mod tests {
             base_peak_mz: None,
             base_peak_intensity: None,
             calibration_id: None,
+            ion_polarity: 0,
             mrm_channel_id: None,
             target_mz: None,
             collision_energy: None,
@@ -900,6 +928,7 @@ mod tests {
             base_peak_mz: Some(513.9653233122384),
             base_peak_intensity: Some(1_572_319.625),
             calibration_id: Some(1),
+            ion_polarity: 0,
             mrm_channel_id: None,
             target_mz: None,
             collision_energy: None,
@@ -930,6 +959,7 @@ mod tests {
             base_peak_mz: None,
             base_peak_intensity: None,
             calibration_id: None,
+            ion_polarity: 0,
             mrm_channel_id: None,
             target_mz: None,
             collision_energy: None,
@@ -940,6 +970,38 @@ mod tests {
 
         let spectrum = reader.iter_spectra().next().unwrap().unwrap();
         assert!(spectrum.extra.is_empty());
+    }
+
+    #[test]
+    fn spectrum_polarity_comes_from_ion_polarity() {
+        let record = |scan_id, ion_polarity| ScanRecord {
+            scan_id,
+            retention_time_min: 0.5,
+            ms_level: 1,
+            min_x: None,
+            max_x: None,
+            tic: None,
+            base_peak_mz: None,
+            base_peak_intensity: None,
+            calibration_id: None,
+            ion_polarity,
+            mrm_channel_id: None,
+            target_mz: None,
+            collision_energy: None,
+            profile_params: None,
+            centroid_params: None,
+        };
+        let mut reader = reader_with_records(220, vec![record(1, 0), record(2, 1), record(3, 5)]);
+        let spectra: Vec<_> = reader.iter_spectra().map(Result::unwrap).collect();
+        assert_eq!(spectra[0].polarity, Some(Polarity::Positive));
+        assert_eq!(spectra[1].polarity, Some(Polarity::Negative));
+        assert_eq!(spectra[2].polarity, None);
+        assert_eq!(spectra[0].extra.get("openaraw.ion_polarity"), None);
+        assert_eq!(spectra[1].extra.get("openaraw.ion_polarity"), None);
+        assert_eq!(
+            spectra[2].extra.get("openaraw.ion_polarity"),
+            Some(&"5".to_string())
+        );
     }
 
     /// Minimal MS-level spectrum carrying just the fields

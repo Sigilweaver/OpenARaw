@@ -32,6 +32,9 @@ def test_decoded_fields():
     first = reader.read_spectrum(0)
     streamed = next(openaraw.iter_spectra(str(path)))
     assert first.native_id == streamed.native_id
+    # IonPolarity 0 is positive, 1 negative; other values leave it None.
+    raw = index["records"][0]["ion_polarity"]
+    assert first.polarity == {0: "positive", 1: "negative"}.get(raw)
     assert len(first.mz) == len(first.intensity)
     for chrom in reader.read_chromatograms():
         assert len(chrom["time_sec"]) == len(chrom["intensity"])
