@@ -99,6 +99,9 @@ minor or patch releases.
 
 ### Changed
 
+- README "Known issues and gaps": measured Q-TOF m/z accuracy and the
+  runs that read 10 to 20 ppm off, stored precursor m/z versus MS1,
+  product-only MRM spectra, bundles that raise errors, and corpus gaps.
 - Breaking: `raw::mspeak::decode_peak_block` takes an
   `Option<&TofCalibration>` (required for Q-TOF blocks), and
   `raw::msprofile::decode_profile_block` takes a `&TofCalibration`
