@@ -37,9 +37,9 @@ engineering, and several of them (`MSScan.xsd`, `MSActualDefs.xml`,
 | --- | --- | --- |
 | [MSScan.bin](./msscan) | Per-scan index: retention time, MS level, and byte offsets into the payload files | Confirmed |
 | [MSPeak.bin](./mspeak) | Centroid (Q-TOF) or single-point MRM (QQQ) peak data | Confirmed |
-| [MSProfile.bin](./msprofile) | Profile-mode intensity arrays, LZF-compressed | Confirmed |
+| [MSProfile.bin](./msprofile) | Profile-mode flight-time axis and intensities, LZF-compressed or run-length encoded | Confirmed |
 | [MSPeriodicActuals.bin](./secondary-bins) | Instrument telemetry (pressures, temperatures, voltages, ...) | Confirmed |
-| [MSMassCal.bin](./msmasscal) | Per-scan calibration coefficient traceability (Q-TOF only) | Confirmed |
+| [MSMassCal.bin](./msmasscal) | Per-scan flight-time calibration (Q-TOF only), with `DefaultMassCal.xml` | Confirmed |
 
 See [Known limitations](./known-limitations) for the specific corpus
 files and conditions the current reader does not handle.

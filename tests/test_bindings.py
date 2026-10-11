@@ -22,6 +22,13 @@ def test_decoded_fields():
     assert reader.device_info() is None or reader.device_info()["model"]
     index = reader.scan_index()
     assert len(index["records"]) == reader.scan_count
+    sources = {r["calibration_source"] for r in index["records"]}
+    assert sources <= {"mass_cal_record", "default_mass_cal", None}
+    if index["stride"] in (216, 220, 284):
+        # Q-TOF: every scan has a calibration, so m/z is never a flight time.
+        assert None not in sources
+        mz = next(s for s in openaraw.iter_spectra(str(path)) if len(s.mz)).mz
+        assert 10 < min(mz) and max(mz) < 20000
     first = reader.read_spectrum(0)
     streamed = next(openaraw.iter_spectra(str(path)))
     assert first.native_id == streamed.native_id

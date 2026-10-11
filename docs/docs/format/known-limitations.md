@@ -4,9 +4,9 @@ sidebar_position: 7
 
 # Known Limitations
 
-This page lists the known limitations and edge cases of the current `OpenARaw` reader that result in unparseable data across the PRIDE validation corpus (332 of 338 `.d` directories pass full conformance checking end to end).
+This document lists the known limitations and edge cases of the current `OpenARaw` reader that result in unparseable data or conformance invariant violations across the PRIDE corpus.
 
-## Malformed or Corrupted Folders
+## 1. Malformed or Corrupted Folders
 
 Some files uploaded to PRIDE are structurally malformed, missing the mandatory `AcqData` directory entirely.
 
@@ -14,6 +14,99 @@ Some files uploaded to PRIDE are structurally malformed, missing the mandatory `
 - **PXD041903**: `20190423_Alex11.d`, `20190423_Alex3.d`, `20190423_Alex7.d` (Double-nested folders missing `AcqData` in the top level).
 - **PXD049393**: `__MACOSX/2022-07-07_sequence1.d`, `__MACOSX/2023-03-01_sequence1.d`, `__MACOSX/2023-07-12_sequence1.d` (macOS filesystem artifacts rather than real datasets).
 
-These are not format variants OpenARaw fails to handle - they are not
-valid `.d` directories at all, and any reader would reject them the same
-way.
+## 2. Spectrum Fields Not Populated From `MSScan.bin`
+
+`SpectrumRecord::polarity` and `PrecursorInfo::selected_mz` are always
+`None` in the reader's output. `polarity` is recoverable but not
+mapped; no source for `selected_mz` is known:
+
+- **`polarity`**: recoverable from record offset 64 (`int32`). The
+  `MSScan.xsd` shipped inside each bundle lists the `ScanRecord` fields
+  in order, and `IonPolarity` lands at offset 64 (after `ScanID`,
+  `ScanMethodID`, `TimeSegmentID`, `ScanTime`, `MSLevel`, `ScanType`,
+  `TIC`, `BasePeakMZ`, `BasePeakValue`, `CalibrationID`, `CycleNumber`,
+  `IonMode`). The same field order puts `CollisionEnergy` at offset 76,
+  which the reader already decodes. Corpus check on
+  `PXD031771/526b_1.d`, whose `AcqMethod.xml` defines time segments
+  Positive (0-0.1 min), Negative (0.1-0.5 min), Positive (0.5 min on):
+  offset 64 reads `0` for scans at 0.04-0.12 min, `1` for 38 scans at
+  0.22-0.53 min, and `0` for every scan after that. This matches
+  `MSActualDefs.xml`'s `"0=Postive,1=Negative"` encoding. The reader
+  does not map it to `SpectrumRecord::polarity`.
+- **`selected_mz`**: distinct from `target_mz` (the isolation window
+  center, which the reader already exposes via
+  `PrecursorInfo::target_mz`). No `f32`/`f64` offset in the record holds
+  a second m/z-like value near `target_mz` across hundreds of MS2 scans
+  spanning strides 216, 220, and 284. Either Agilent does not store a distinct
+  selected/monoisotopic precursor m/z in this record (recovering one
+  would require re-picking against the isolation window in `MSPeak.bin`,
+  a processing step this reader does not perform), or it is identical to
+  `target_mz` and therefore not a distinct field.
+
+A source for `selected_mz` outside `MSScan.bin` (e.g. a fuller decode
+of `MSPeriodicActuals.bin`'s per-channel `Value` semantics) is
+unchecked. Any change here needs corpus evidence, not just a plausible
+byte offset.
+
+## 3. No Ion Mobility / CCS Support (Agilent 6560 IM-QTOF)
+
+`SpectrumRecord::inv_mobility` and `SpectrumRecord::inv_mobility_per_peak`
+are always `None`; `RunMetadata::mobility_array_kind` is always `None` as
+well. Unlike section 2, there is no real record to check against:
+**no ion-mobility acquisition exists anywhere in the validation
+corpus.**
+
+All 338 cataloged `.d` directories come from the PRIDE Archive (see
+`CORPUS.md`), a proteomics-focused repository. Every `Devices.xml` mass
+spectrometer `<ModelNumber>` seen across the corpus is one of `G6410A`
+(QQQ), or `G6530A`/`G6530B`/`G6540A`/`G6540B`/`G6550A`/`G6550B` (Q-TOF) -
+see `docs/format/01-msscan.md` and `docs/format/07-run-metadata.md`. No
+`G6560` (6560 IM-QTOF) unit, or any other drift-tube-equipped instrument,
+appears in any cataloged bundle.
+
+Without a real 6560 `AcqData` bundle to read, there is nothing to
+reverse-engineer against - and per this project's clean-room policy,
+guessing at a plausible-looking field or file name from general IM-MS
+knowledge and shipping it as a "decode" is exactly the kind of
+unverified claim the policy prohibits. This is therefore left
+undocumented-as-a-format-question rather than implemented:
+
+- It is not confirmed whether a 6560 `AcqData` directory even reuses
+  `MSScan.bin`'s existing record layout (e.g. an extra drift-time field
+  appended to the strides already catalogued in
+  `docs/format/01-msscan.md`), or whether IM-QTOF acquisitions use
+  additional binary stream(s) alongside it (frame-indexed drift spectra,
+  the way OpenWRaw and OpenTimsTDF each expose an instrument-specific
+  mobility file distinct from their base spectrum index) - this crate
+  has never seen one to check.
+- It is not confirmed what such a file would be named, or what its
+  header/record layout would be, without a sample to inspect.
+- CCS (collision cross section) is typically a derived value (from
+  drift time, charge state, and instrument calibration constants) rather
+  than a directly stored field in most vendor IM formats; whether Agilent
+  stores a precomputed CCS anywhere in the bundle, or only raw drift
+  time requiring the reader to apply a calibration, is unknown without a
+  sample.
+
+**Prerequisite for support:** obtain a real 6560 IM-QTOF `.d`
+bundle from a public, non-vendor-tool-verified source (a PRIDE, MetaboLights,
+or similar open-data submission using this instrument) and add it to the
+corpus before writing any parsing code. Without one, `inv_mobility` /
+`inv_mobility_per_peak` / `mobility_array_kind` should stay `None` rather
+than be backed by an unverified field guess.
+
+## 4. Q-TOF Calibration Files and Missing Profile Data
+
+- **Q-TOF bundles with neither `MSMassCal.bin` nor `DefaultMassCal.xml`
+  yield empty spectra.** Without either file there is no calibration to
+  convert flight times to m/z. The reader logs this, emits the scans with
+  empty arrays, and counts each block in
+  `Reader::centroid_decode_failures()` /
+  `Reader::profile_decode_failures()`; flight times are never reported as
+  m/z. One corpus bundle is affected: `PXD031771/655_2.d`, which also
+  lacks `Devices.xml` and the other method files.
+- **`PXD022473/M.d` has no `MSProfile.bin`** although its scan records
+  point into one (profile data only). Every scan is logged, counted as a
+  profile decode failure and emitted empty. This is a defect of the
+  upload, not a format variant.
+- QQQ (MRM) centroid data stores m/z directly and is unaffected.

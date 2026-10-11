@@ -91,14 +91,18 @@ corpus before writing any parsing code. Without one, `inv_mobility` /
 `inv_mobility_per_peak` / `mobility_array_kind` should stay `None` rather
 than be backed by an unverified field guess.
 
-## 4. Q-TOF m/z and Profile Spectra
+## 4. Q-TOF Calibration Files and Missing Profile Data
 
-- **Q-TOF m/z values are incorrect.** Q-TOF centroid x-values in
-  `MSPeak.bin` are uncalibrated flight times. The reader reports them as
-  m/z without applying the bundle's mass calibration
-  (`DefaultMassCal.xml` / `MSMassCal.bin`), so the error depends on m/z
-  and runs to hundreds of Da. QQQ (MRM) centroid data is correct.
-- **Profile spectra are not emitted.** The `MSProfile.bin` layout in
-  `04-msprofile.md` does not decode real blocks. Each scan falls back to
-  centroid data; failures are logged and counted by
-  `Reader::profile_decode_failures()`.
+- **Q-TOF bundles with neither `MSMassCal.bin` nor `DefaultMassCal.xml`
+  yield empty spectra.** Without either file there is no calibration to
+  convert flight times to m/z. The reader logs this, emits the scans with
+  empty arrays, and counts each block in
+  `Reader::centroid_decode_failures()` /
+  `Reader::profile_decode_failures()`; flight times are never reported as
+  m/z. One corpus bundle is affected: `PXD031771/655_2.d`, which also
+  lacks `Devices.xml` and the other method files.
+- **`PXD022473/M.d` has no `MSProfile.bin`** although its scan records
+  point into one (profile data only). Every scan is logged, counted as a
+  profile decode failure and emitted empty. This is a defect of the
+  upload, not a format variant.
+- QQQ (MRM) centroid data stores m/z directly and is unaffected.

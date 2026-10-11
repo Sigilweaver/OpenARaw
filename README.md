@@ -19,17 +19,14 @@ Documentation: [sigilweaver.app/openaraw/docs](https://sigilweaver.app/openaraw/
 
 ## Known issues
 
-- **Q-TOF m/z values are incorrect.** Q-TOF centroid x-values are
-  uncalibrated flight times, and the reader reports them as m/z without
-  applying the bundle's mass calibration (`DefaultMassCal.xml` /
-  `MSMassCal.bin`). The error depends on m/z and runs to hundreds of Da,
-  so Q-TOF m/z values should not be used.
-- **Profile spectra are not emitted.** Profile blocks in `MSProfile.bin`
-  fail to decode, and the reader falls back to centroid data for every
-  scan. Each failure is logged and counted
-  (`Reader::profile_decode_failures()`).
-- **QQQ (MRM) centroid data is unaffected.** MRM m/z values are stored
-  directly and are read as-is.
+- **Q-TOF bundles with neither `MSMassCal.bin` nor `DefaultMassCal.xml`
+  yield empty spectra.** There is no calibration to convert flight times
+  to m/z. Each affected block is logged and counted
+  (`Reader::centroid_decode_failures()`,
+  `Reader::profile_decode_failures()`); flight times are never reported
+  as m/z. One corpus bundle (`PXD031771/655_2.d`) is affected.
+
+QQQ (MRM) m/z values are stored directly and are read as-is.
 
 ## Install
 

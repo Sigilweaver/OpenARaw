@@ -8,9 +8,9 @@
 //!   from PRIDE (see `CORPUS.md`), where it is always `Name=QTOF` /
 //!   `Type=6` or `Name=TandemQuadrupole` / `Type=5`, both with
 //!   `StoredDataType=8`. Its `<ModelNumber>` (e.g. `G6550A`) is the real,
-//!   vendor-assigned instrument identifier - unlike the previous
-//!   `MSScan.bin` record-stride guess, which only distinguished "wide
-//!   record" from "narrow record" and mapped that to a hardcoded string.
+//!   vendor-assigned instrument identifier - unlike the `MSScan.bin`
+//!   record-stride fallback in `reader.rs`, which only distinguishes wide
+//!   (Q-TOF) from narrow (QQQ) records and maps that to a generic term.
 //! - `AcqData/Contents.xml` carries a single run-level `<AcquiredTime>`
 //!   element with the acquisition start time. Observed corpus values are
 //!   already RFC 3339 (either `2014-08-06T22:49:56Z` or an offset form

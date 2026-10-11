@@ -8,8 +8,11 @@ internals to draw on; the binary formats documented in
 the public PRIDE corpus (see [CORPUS.md](CORPUS.md)).
 
 One piece of genuine prior art did make `MSProfile.bin` decodable:
-`MSProfile.bin` uses standard, unmodified LZF compression (no Agilent-
-specific framing) on its intensity payload.
+its LZF blocks use standard, unmodified LZF compression (no Agilent-
+specific framing) on their intensity payload. The run-length blocks
+written by acquisition software 10.1 were decoded from the corpus
+bundles alone, checked against the per-scan summaries stored in
+`MSScan.bin` (see `docs/format/04-msprofile.md`).
 
 ### LZF
 
