@@ -4,7 +4,7 @@
 [![crates.io](https://img.shields.io/crates/v/openaraw.svg)](https://crates.io/crates/openaraw)
 [![PyPI](https://img.shields.io/pypi/v/openaraw.svg)](https://pypi.org/project/openaraw/)
 [![docs.rs](https://img.shields.io/docsrs/openaraw)](https://docs.rs/openaraw)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/Sigilweaver/OpenARaw/blob/main/LICENSE)
 [![Rust MSRV](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
 
 > Part of the [OpenMassSpec](https://github.com/Sigilweaver/OpenMassSpec)
@@ -90,8 +90,8 @@ guide, format specification, and API reference.
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](https://github.com/Sigilweaver/OpenARaw/blob/main/LICENSE).
 
 The format specification was developed by binary analysis of public
 mass-spectrometry datasets (PRIDE accessions). See
-[CORPUS.md](CORPUS.md) and [ATTRIBUTION.md](ATTRIBUTION.md).
+[CORPUS.md](https://github.com/Sigilweaver/OpenARaw/blob/main/CORPUS.md) and [ATTRIBUTION.md](https://github.com/Sigilweaver/OpenARaw/blob/main/ATTRIBUTION.md).
