@@ -16,6 +16,7 @@
 
 /// Where a scan's calibration came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CalibrationSource {
     /// The scan's own `MSMassCal.bin` record (reference-mass corrected).
     MassCalRecord,
@@ -24,12 +25,23 @@ pub enum CalibrationSource {
     DefaultMassCal,
 }
 
+impl CalibrationSource {
+    /// Stable lowercase label: `"mass_cal_record"` or `"default_mass_cal"`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CalibrationSource::MassCalRecord => "mass_cal_record",
+            CalibrationSource::DefaultMassCal => "default_mass_cal",
+        }
+    }
+}
+
 /// Number of values in a `Polynomial` step: `t_min`, `t_max` and six
 /// coefficient slots.
 pub const POLYNOMIAL_VALUES: usize = 8;
 
 /// The `Polynomial` correction step.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct PolynomialStep {
     /// Lower end of the flight-time range the polynomial is evaluated on.
     pub t_min: f64,
@@ -102,6 +114,7 @@ impl PolynomialStep {
 
 /// One scan's flight-time calibration.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct TofCalibration {
     /// `Traditional` step slope `A`.
     pub a: f64,

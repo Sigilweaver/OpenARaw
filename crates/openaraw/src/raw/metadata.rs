@@ -26,6 +26,7 @@ use std::path::Path;
 
 /// The mass spectrometer entry read from `Devices.xml`.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DeviceInfo {
     /// `<Name>`, e.g. `"QTOF"` or `"TandemQuadrupole"`.
     pub name: String,

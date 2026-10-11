@@ -17,7 +17,12 @@ reader = openaraw.RawReader("sample.d")
 Opening a `RawReader` parses the `.d` directory and decodes **every**
 spectrum up front into memory, so construction is where the work happens
 and subsequent access is cheap. For streaming access over very large
-acquisitions, use the Rust reader's `iter_spectra` instead.
+acquisitions, use `openaraw.iter_spectra(path)`, which decodes one
+spectrum at a time.
+
+A scan that cannot be decoded raises `RuntimeError`: from the
+`RawReader` constructor, from `read_chromatograms()`, or from the
+`iter_spectra` iterator when it reaches that scan.
 
 ## `RawReader`
 

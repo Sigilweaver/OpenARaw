@@ -44,6 +44,7 @@ const HEADER_SIZE: usize = 68;
 const RECORD_STRIDE: usize = 20;
 
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct ActualsRecord {
     /// Telemetry channel ID; defined per-instrument in `MSActualDefs.xml`
     /// (e.g. 27 = Gas Temp, 29 = Rough Vac, 57 = Charge State).

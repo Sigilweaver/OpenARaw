@@ -30,11 +30,17 @@ println!("{} ({} scans)", metadata.source_file_name, scan_count);
 
 let mut reader = reader;
 for spectrum in reader.iter_spectra() {
+    let spectrum = spectrum?;
     println!("{}\t{}\t{} peaks", spectrum.native_id, spectrum.ms_level, spectrum.mz.len());
 }
 ```
 
-Each yielded `SpectrumRecord` carries `index`, `scan_number`, `native_id`,
+`iter_spectra` yields one `openmassspec_core::Result<SpectrumRecord>` per
+`MSScan.bin` record, in file order. A scan whose payload block cannot be
+read or decoded is yielded as an `Err`, and iteration continues with the
+next scan.
+
+Each `SpectrumRecord` carries `index`, `scan_number`, `native_id`,
 `ms_level`, `scan_mode` (`Centroid` or `Profile`), `analyzer` (`TOFMS` for
 Q-TOF, `TQMS` for QQQ), `retention_time_sec`, `mz`/`intensity` arrays, and
 - for MS2+ scans - a `precursor` (`PrecursorInfo`) populated either from
@@ -45,5 +51,16 @@ records.
 ## Error handling
 
 Public functions return `openaraw::Result<T>`. The error type is
-`openaraw::Error`, which wraps the failure category (`Io`, `Parse`) and a
-message.
+`openaraw::Error`: `Io`, `Parse` (a message), or `Scan` (a scan's payload
+block failed: its `scan_id`, which `block`, and the underlying error).
+The enum is `#[non_exhaustive]`, so match it with a wildcard arm.
+
+`SpectrumSource` methods return `openmassspec_core::Error`. An
+`openaraw::Error` converts into it with `From` (I/O errors become
+`Error::Io`, the rest `Error::Vendor`, which can be downcast back to
+`openaraw::Error`).
+
+The reader also exposes `dir()`, `bundle_name()`, `msscan()` (the decoded
+`MSScan.bin` records), `device()` (the `Devices.xml` mass spectrometer
+entry) and `calibration(i)`. `profile_decode_failures()` and
+`centroid_decode_failures()` count the scans yielded as errors so far.

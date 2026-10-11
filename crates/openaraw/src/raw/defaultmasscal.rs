@@ -10,6 +10,7 @@ use std::path::Path;
 
 /// One `DefaultCalibration` entry.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct DefaultCalibration {
     /// `DefaultCalibrationID`.
     pub id: i32,

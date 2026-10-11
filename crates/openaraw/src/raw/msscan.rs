@@ -4,6 +4,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use std::path::Path;
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct SpectrumParams {
     pub format_id: u32,
     pub offset: u64,
@@ -13,6 +14,7 @@ pub struct SpectrumParams {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ScanRecord {
     pub scan_id: u32,
     pub retention_time_min: f64,
@@ -46,6 +48,7 @@ pub fn is_qtof_stride(stride: u32) -> bool {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct MSScan {
     pub global_header_size: u32,
     pub stride: u32,

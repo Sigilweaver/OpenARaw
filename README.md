@@ -20,11 +20,10 @@ Documentation: [sigilweaver.app/openaraw/docs](https://sigilweaver.app/openaraw/
 ## Known issues
 
 - **Q-TOF bundles with neither `MSMassCal.bin` nor `DefaultMassCal.xml`
-  yield empty spectra.** There is no calibration to convert flight times
-  to m/z. Each affected block is logged and counted
-  (`Reader::centroid_decode_failures()`,
-  `Reader::profile_decode_failures()`); flight times are never reported
-  as m/z. One corpus bundle (`PXD031771/655_2.d`) is affected.
+  cannot be decoded.** There is no calibration to convert flight times
+  to m/z, so `iter_spectra` yields an error for each scan; flight times
+  are never reported as m/z. One corpus bundle (`PXD031771/655_2.d`) is
+  affected.
 
 QQQ (MRM) m/z values are stored directly and are read as-is.
 
@@ -68,6 +67,7 @@ use openmassspec_core::SpectrumSource;
 
 let mut reader = Reader::open("sample.d")?;
 for spectrum in reader.iter_spectra() {
+    let spectrum = spectrum?;
     println!("{}: {} peaks", spectrum.native_id, spectrum.mz.len());
 }
 ```
