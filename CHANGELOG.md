@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 This release changes the public Rust API (see Breaking, Changed and
-Removed) and ships as 0.3.0.
+Removed) and ships as 1.0.0. From 1.0.0 on, fixes and new fields ship as
+minor or patch releases.
 
 ### Breaking
 
