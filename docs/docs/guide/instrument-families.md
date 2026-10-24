@@ -18,9 +18,9 @@ automatically selected precursors.
 - `analyzer` on yielded spectra is `Analyzer::TOFMS`.
 - MS2 spectra carry a real `target_mz` precursor - see
   [Scan data](./scan-data).
-- `MSMassCal.bin` is present, holding per-scan calibration coefficient
-  traceability (already applied upstream - see
-  [MSMassCal.bin](../format/msmasscal)).
+- `MSMassCal.bin` (per-scan calibration) and `DefaultMassCal.xml`
+  (default calibration) convert flight times to m/z. Some bundles have
+  only `DefaultMassCal.xml` - see [MSMassCal.bin](../format/msmasscal).
 
 ## QQQ
 
@@ -34,8 +34,8 @@ the run.
   in the Q-TOF sense, so precursor identity is carried as
   `precursor_native_id` (`mrm_channel=<id>`) instead - see
   [Scan data](./scan-data).
-- `MSMassCal.bin` is absent - QQQ instruments don't use TOF-style dynamic
-  mass recalibration.
+- `MSMassCal.bin` and `DefaultMassCal.xml` are absent: QQQ m/z is stored
+  directly, with no flight-time calibration.
 
 ## How the reader tells them apart
 
@@ -46,9 +46,8 @@ spectrometer `<Device>` entry: `<Name>QTOF</Name>` maps to
 validation corpus (see
 [`docs/format/07-run-metadata.md`](https://github.com/Sigilweaver/OpenARaw/blob/main/docs/format/07-run-metadata.md)
 in the repository). Only when `Devices.xml` is missing, unparseable, or
-names a device outside those two known values does it fall back to the
-legacy heuristic: `MSScan.bin`'s
-record stride (`>= 220` bytes indicates Q-TOF; QQQ records use a shorter
-186- or 196-byte stride) - see [MSScan.bin](../format/msscan) for the full
+names a device outside those two known values does it fall back to
+`MSScan.bin`'s record stride (a 216-, 220- or 284-byte stride indicates
+Q-TOF; QQQ records use a 186- or 196-byte stride) - see [MSScan.bin](../format/msscan) for the full
 stride table. If you encounter a `.d` directory either path misclassifies,
 please [open an issue](https://github.com/Sigilweaver/OpenARaw/issues).

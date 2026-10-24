@@ -37,41 +37,67 @@ sure new format knowledge came from public datasets and your own analysis -
 proprietary specifications. See [ATTRIBUTION.md](ATTRIBUTION.md) and
 [CORPUS.md](CORPUS.md).
 
-**Never use vendor software.** This is a clean-room project. Do not run,
-depend on, or validate against Agilent's own tools, or anything that reads
-`.d` data through Agilent's libraries - not in CI, not in tests, not in
-local development. That means no MassHunter (Qualitative Analysis,
-Quantitative Analysis, Acquisition, or any other MassHunter component), no
-ChemStation, no OpenLab CDS, and no ProteoWizard `msconvert` (it links
-Agilent's own MHDAC/MIDAC libraries to read `.d` data, so it counts as
-vendor software here even though it's open source). Do not install them, do
-not shell out to them, do not use their output as a reference "to check
-your work against."
+This section follows the Sigilweaver [format provenance
+policy](https://github.com/Sigilweaver/ops/blob/main/PROVENANCE.md), shared
+by every reader in the suite. Where the two differ, the policy wins.
 
-Correctness is argued only from open references: the `.xml`/`.xsd` schema
-files Agilent ships alongside the data itself (reading those is not
-reverse-engineering - it's just reading published, non-proprietary schema
-files), the PSI-MS mzML schema, published open specifications, roundtrip
-and self-consistency invariants, and independent open-source parsers used
-purely as format checkers. Comparing, benchmarking, or tuning output
-against vendor results is not allowed and would compromise the clean-room
-status of the project. If you can only explain a field by having watched
+**No vendor software in the project.** Do not depend on Agilent's own
+tools, or on anything that reads `.d` data through Agilent's libraries, and
+do not run them in CI or tests. That covers MassHunter (Qualitative
+Analysis, Quantitative Analysis, Acquisition, or any other MassHunter
+component), ChemStation, OpenLab CDS, and ProteoWizard `msconvert` (it
+links Agilent's own MHDAC/MIDAC libraries to read `.d` data, so it counts
+as vendor software here even though it's open source). Do not bypass
+encryption, license checks, or any other technical protection to read data,
+and do not contribute format knowledge from anyone working from
+vendor-internal information.
+
+Correctness is argued from open references: public data files, including
+the `.xml`/`.xsd` schema files Agilent ships alongside the data itself
+(reading those is not reverse-engineering - it's just reading published,
+non-proprietary schema files), the PSI-MS mzML schema, published open
+specifications, roundtrip and self-consistency invariants, and independent
+open-source parsers used purely as format checkers. Every layout must be
+explainable from those. If you can only explain a field by having watched
 what MassHunter shows for it, don't write that down - keep digging in the
 bytes instead, or flag it as unresolved.
 
-**Pull requests that were written or verified with the help of proprietary
-vendor software will not be accepted**, regardless of code quality, since
-accepting them would compromise the project's clean-room provenance. If
-you've found a bug this way, or you'd simply rather not write the fix
-yourself, please open an issue instead. Describe the symptom on the input
-that triggers it - what's wrong, and on what file - without pasting vendor
-tool output, vendor source, or values you learned by running vendor
-software. We'll investigate and fix it from public references. Detailed
-issue reports are genuinely useful and will be acted on.
+**Cross-checking against vendor software is allowed, with disclosure.** If
+you are licensed to run Agilent's software, you may compare values this
+project decodes against its output. A comparison can confirm a decoder; it
+cannot be the only basis for one. Say so in the pull request: which tool,
+which files, and what you compared. Do not paste vendor-tool output into
+the repository. If a value's only basis is a vendor comparison (for example
+a derived quantity whose formula was matched to vendor output rather than
+taken from a public source), document that next to the value. Cross-checks
+are recorded in [ATTRIBUTION.md](ATTRIBUTION.md).
 
-`/workspaces/Projects/Data` (or wherever the corpus lives in your checkout)
-holds real research data that can be expensive to redownload. Treat it as
-read-only except for adding cache/derived files you clearly own.
+If you'd rather not write the fix yourself, or you've found a bug by
+comparing against vendor software and don't want to send a pull request,
+please open an issue instead. Describe the symptom on the input that
+triggers it - what's wrong, and on what file - without pasting vendor tool
+output or vendor source. We'll investigate and fix it from public
+references. Detailed issue reports are genuinely useful and will be acted
+on.
+
+The research corpus (wherever it lives on your machine) holds real
+research data that can be expensive to redownload. Treat it as read-only
+except for adding cache/derived files you clearly own.
+
+Corpus-backed tests and the `corpus_scan` example find it through
+environment variables:
+
+- `OPENARAW_CORPUS`: the corpus root, the directory containing
+  `index.csv` and the per-accession folders (e.g. `PXD004747/...`).
+  Tests that need a bundle only found there skip when this is unset.
+- `REQUIRE_CORPUS=1`: make the conformance tests fail, instead of
+  skip, when their fixture is missing. CI sets this for jobs that
+  download fixtures into `corpus/`.
+
+```sh
+OPENARAW_CORPUS=/path/to/ARaw cargo test --workspace
+OPENARAW_CORPUS=/path/to/ARaw cargo run --release --example corpus_scan
+```
 
 ## Security
 

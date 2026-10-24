@@ -16,58 +16,23 @@ fn to_py_err(e: ::openaraw::Error) -> PyErr {
     PyRuntimeError::new_err(e.to_string())
 }
 
+fn core_err(e: openmassspec_core::Error) -> PyErr {
+    PyRuntimeError::new_err(e.to_string())
+}
+
+/// Python label of an analyzer. `"tofms"` predates the core label
+/// (`"tof"`) and is kept for compatibility.
 fn analyzer_str(a: Analyzer) -> &'static str {
     match a {
-        Analyzer::ITMS => "itms",
-        Analyzer::TQMS => "tqms",
-        Analyzer::SQMS => "sqms",
         Analyzer::TOFMS => "tofms",
-        Analyzer::FTMS => "ftms",
-        Analyzer::Sector => "sector",
-    }
-}
-
-fn activation_str(a: Activation) -> &'static str {
-    match a {
-        Activation::HCD => "hcd",
-        Activation::MPID => "mpid",
-        Activation::ETD => "etd",
-        Activation::CID => "cid",
-        Activation::ECD => "ecd",
-        Activation::IRMPD => "irmpd",
-        Activation::PD => "pd",
-        Activation::PQD => "pqd",
-        Activation::UVPD => "uvpd",
-        Activation::SID => "sid",
-        Activation::EThcD => "ethcd",
-    }
-}
-
-fn polarity_str(p: Polarity) -> &'static str {
-    match p {
-        Polarity::Positive => "positive",
-        Polarity::Negative => "negative",
-    }
-}
-
-fn scan_mode_str(m: ScanMode) -> &'static str {
-    match m {
-        ScanMode::Centroid => "centroid",
-        ScanMode::Profile => "profile",
-    }
-}
-
-fn mobility_kind_str(k: MobilityArrayKind) -> &'static str {
-    match k {
-        MobilityArrayKind::InverseReducedVsPerCm2 => "inverse_reduced_k0",
-        MobilityArrayKind::DriftTimeMilliseconds => "drift_time_ms",
+        other => other.as_str(),
     }
 }
 
 fn cv_term_dict<'py>(py: Python<'py>, term: &CvTerm) -> PyResult<Bound<'py, PyDict>> {
     let d = PyDict::new(py);
-    d.set_item("accession", term.accession)?;
-    d.set_item("name", &term.name)?;
+    d.set_item("accession", term.accession.as_ref())?;
+    d.set_item("name", term.name.as_ref())?;
     Ok(d)
 }
 
@@ -81,7 +46,7 @@ fn precursor_dict<'py>(py: Python<'py>, p: &PrecursorInfo) -> PyResult<Bound<'py
     d.set_item("collision_energy", p.collision_energy)?;
     d.set_item("ce_is_nce", p.ce_is_nce)?;
     d.set_item("precursor_native_id", &p.precursor_native_id)?;
-    d.set_item("activation", p.activation.map(activation_str))?;
+    d.set_item("activation", p.activation.map(Activation::as_str))?;
     d.set_item("analyzer", p.analyzer.map(analyzer_str))?;
     d.set_item("ccs", p.ccs)?;
     Ok(d)
@@ -107,7 +72,7 @@ fn run_info_dict<'py>(py: Python<'py>, m: &RunMetadata) -> PyResult<Bound<'py, P
     d.set_item("start_timestamp", &m.start_timestamp)?;
     d.set_item(
         "mobility_array_kind",
-        m.mobility_array_kind.map(mobility_kind_str),
+        m.mobility_array_kind.map(MobilityArrayKind::as_str),
     )?;
     d.set_item(
         "analyzers",
@@ -123,10 +88,11 @@ fn run_info_dict<'py>(py: Python<'py>, m: &RunMetadata) -> PyResult<Bound<'py, P
 
 fn chromatograms_to_py<'py>(
     py: Python<'py>,
-    records: impl IntoIterator<Item = ChromatogramRecord>,
+    records: impl IntoIterator<Item = openmassspec_core::Result<ChromatogramRecord>>,
 ) -> PyResult<Bound<'py, PyList>> {
     let out = PyList::empty(py);
     for c in records {
+        let c = c.map_err(core_err)?;
         let d = PyDict::new(py);
         d.set_item("index", c.index)?;
         d.set_item("id", c.id)?;
@@ -186,11 +152,11 @@ impl Spectrum {
     }
     #[getter]
     fn polarity(&self) -> Option<&'static str> {
-        self.rec.polarity.map(polarity_str)
+        self.rec.polarity.map(Polarity::as_str)
     }
     #[getter]
     fn scan_mode(&self) -> Option<&'static str> {
-        self.rec.scan_mode.map(scan_mode_str)
+        self.rec.scan_mode.map(ScanMode::as_str)
     }
     #[getter]
     fn analyzer(&self) -> Option<&'static str> {
@@ -301,7 +267,10 @@ impl RawReader {
     #[new]
     fn new(path: &str) -> PyResult<Self> {
         let mut reader = Reader::open(path).map_err(to_py_err)?;
-        let spectra = reader.iter_spectra().collect();
+        let spectra = reader
+            .iter_spectra()
+            .collect::<openmassspec_core::Result<Vec<_>>>()
+            .map_err(core_err)?;
         Ok(Self {
             path: path.to_string(),
             reader,
@@ -329,8 +298,7 @@ impl RawReader {
     /// Instrument name and model decoded from Devices.xml, when available.
     fn device_info<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
         self.reader
-            .device
-            .as_ref()
+            .device()
             .map(|device| {
                 let out = PyDict::new(py);
                 out.set_item("name", &device.name)?;
@@ -347,17 +315,28 @@ impl RawReader {
     /// The decoded MSScan.bin header and scan records.
     fn scan_index<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let out = PyDict::new(py);
-        out.set_item("global_header_size", self.reader.msscan.global_header_size)?;
-        out.set_item("stride", self.reader.msscan.stride)?;
+        out.set_item(
+            "global_header_size",
+            self.reader.msscan().global_header_size,
+        )?;
+        out.set_item("stride", self.reader.msscan().stride)?;
         let records = PyList::empty(py);
-        for r in &self.reader.msscan.records {
+        for (i, r) in self.reader.msscan().records.iter().enumerate() {
             let d = PyDict::new(py);
             d.set_item("scan_id", r.scan_id)?;
             d.set_item("retention_time_min", r.retention_time_min)?;
             d.set_item("ms_level", r.ms_level)?;
             d.set_item("min_x", r.min_x)?;
             d.set_item("max_x", r.max_x)?;
+            d.set_item("tic", r.tic)?;
+            d.set_item("base_peak_mz", r.base_peak_mz)?;
             d.set_item("base_peak_intensity", r.base_peak_intensity)?;
+            d.set_item("calibration_id", r.calibration_id)?;
+            d.set_item("ion_polarity", r.ion_polarity)?;
+            d.set_item(
+                "calibration_source",
+                self.reader.calibration(i).map(|c| c.source.as_str()),
+            )?;
             d.set_item("mrm_channel_id", r.mrm_channel_id)?;
             d.set_item("target_mz", r.target_mz)?;
             d.set_item("collision_energy", r.collision_energy)?;
@@ -436,7 +415,14 @@ fn iter_spectra(py: Python<'_>, path: String) -> PyResult<Py<SpectrumIter>> {
     let handle = std::thread::spawn(move || match Reader::open(&path) {
         Ok(mut reader) => {
             for rec in reader.iter_spectra() {
-                if tx.send(StreamMsg::Record(Box::new(rec))).is_err() {
+                let msg = match rec {
+                    Ok(rec) => StreamMsg::Record(Box::new(rec)),
+                    Err(e) => {
+                        let _ = tx.send(StreamMsg::Done(Err(e.to_string())));
+                        return;
+                    }
+                };
+                if tx.send(msg).is_err() {
                     return;
                 }
             }

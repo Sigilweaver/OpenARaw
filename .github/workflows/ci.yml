@@ -8,6 +8,8 @@
 #           crates/openaraw/tests/conformance.rs's test_qqq_conformance and
 #           test_qtof_conformance exercise real decode paths instead of
 #           skipping - see Sigilweaver/OpenARaw#20 and #28.
+#   semver-checks - cargo-semver-checks on openaraw against its latest
+#           crates.io release (Linux only).
 #
 # Unlike OpenTFRaw's single-file .raw fixture, the corpus this reader
 # validates against is whole .d *directories*, which PRIDE does not expose
@@ -84,9 +86,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$CORPUS_DIR"
-          curl -sSL --user-agent "OpenARaw-CI/1.0" -o "$CORPUS_DIR/$CORPUS_DZIP_NAME" "$PRIDE_DZIP_URL"
+          curl -fsSL --retry 3 --user-agent "OpenARaw-CI/1.0" -o "$CORPUS_DIR/$CORPUS_DZIP_NAME" "$PRIDE_DZIP_URL"
           echo "Downloaded $(du -sh "$CORPUS_DIR/$CORPUS_DZIP_NAME" | cut -f1) QQQ corpus fixture archive"
-          curl -sSL --user-agent "OpenARaw-CI/1.0" -o "$CORPUS_DIR/$CORPUS_DZIP_NAME_QTOF" "$PRIDE_DZIP_URL_QTOF"
+          curl -fsSL --retry 3 --user-agent "OpenARaw-CI/1.0" -o "$CORPUS_DIR/$CORPUS_DZIP_NAME_QTOF" "$PRIDE_DZIP_URL_QTOF"
           echo "Downloaded $(du -sh "$CORPUS_DIR/$CORPUS_DZIP_NAME_QTOF" | cut -f1) QTOF corpus fixture archive"
 
       - name: Extract corpus fixtures (Unix)
@@ -104,6 +106,10 @@ jobs:
           Expand-Archive -Path "$env:CORPUS_DIR/$env:CORPUS_DZIP_NAME_QTOF" -DestinationPath "$env:CORPUS_DIR"
 
       - name: cargo test
+        # Fixtures were downloaded above, so a missing one is a failure,
+        # not a skip.
+        env:
+          REQUIRE_CORPUS: "1"
         run: cargo test --workspace --all-targets
 
       - name: Python binding parity
@@ -112,18 +118,34 @@ jobs:
           python3 -m venv .venv
           .venv/bin/python -m pip install 'maturin>=1.5,<2' pytest
           VIRTUAL_ENV="$PWD/.venv" .venv/bin/maturin develop --release
-          OPENARAW_TEST_BUNDLE=corpus/180814-Sample19.d .venv/bin/python -m pytest tests/test_bindings.py -v
+          REQUIRE_CORPUS=1 OPENARAW_TEST_BUNDLE=corpus/180814-Sample19.d .venv/bin/python -m pytest tests/test_bindings.py -v
 
+  docs-validation:
+    name: Shared docs validation
+    permissions:
+      contents: read
+    uses: Sigilweaver/ops/.github/workflows/docs.yml@757c6789b96e3ac05bbc7d1a092d01cbeb0cb9e2
+    with:
+      tooling-ref: 757c6789b96e3ac05bbc7d1a092d01cbeb0cb9e2
   docs:
     name: Docs (Docusaurus)
+    needs: docs-validation
+    if: ${{ always() }}
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: docs
+    env:
+      DOCS_RESULT: ${{ needs.docs-validation.result }}
+    steps:
+      - run: test "$DOCS_RESULT" = success
+  # Public API compatibility of the crates.io-published crate against its
+  # latest published version. A breaking change without a matching version
+  # bump fails; a deliberate major bump passes. OS-independent, so Linux only.
+  semver-checks:
+    name: Semver checks
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-      - name: bun install
-        run: bun install --frozen-lockfile
-      - name: bun run build:cloudflare
-        run: bun run build:cloudflare
+
+      - name: cargo semver-checks
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          package: openaraw

@@ -20,7 +20,7 @@ abstract: >
   acquisitions.
 license: "Apache-2.0"
 license-url: "https://github.com/Sigilweaver/OpenARaw/blob/main/LICENSE"
-version: "0.1.0"
+version: "1.0.0"
 keywords:
   - mass spectrometry
   - proteomics

@@ -1,9 +1,11 @@
 //! MSScan.bin index parsing.
 
 use byteorder::{ByteOrder, LittleEndian};
+use openmassspec_core::Polarity;
 use std::path::Path;
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct SpectrumParams {
     pub format_id: u32,
     pub offset: u64,
@@ -13,23 +15,31 @@ pub struct SpectrumParams {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ScanRecord {
     pub scan_id: u32,
     pub retention_time_min: f64,
     pub ms_level: u32,
     pub min_x: Option<f64>,
     pub max_x: Option<f64>,
-    /// Instrument-reported base-peak intensity (record offset 44, f64).
-    /// Confirmed for stride-284 Q-TOF records only.
+    /// Instrument-reported total ion current (`TIC`, record offset 28,
+    /// f64). Q-TOF records only.
+    pub tic: Option<f64>,
+    /// Instrument-reported base-peak m/z (`BasePeakMZ`, record offset 36,
+    /// f64). Q-TOF records only.
+    pub base_peak_mz: Option<f64>,
+    /// Instrument-reported base-peak intensity (`BasePeakValue`, record
+    /// offset 44, f64). Q-TOF records only.
     pub base_peak_intensity: Option<f64>,
-    /// Raw value at record offset 36 (f64), decoded for stride-284 Q-TOF
-    /// records but of unconfirmed meaning. Corpus comparison (PXD001310)
-    /// ruled out both decoded TIC (sum of intensities) and the m/z of the
-    /// max-intensity centroid point - the values are in a plausible m/z-like
-    /// range (~400-600 for this corpus) but don't match either quantity.
-    /// Intentionally not mapped to `total_ion_current` or `base_peak_mz` in
-    /// `reader.rs`; see `docs/format/01-msscan.md` and Sigilweaver/OpenARaw#19.
-    pub unidentified_offset_36: Option<f64>,
+    /// `CalibrationID` (record offset 52, int32). Q-TOF records only.
+    pub calibration_id: Option<i32>,
+    /// Raw `IonPolarity` value. The bundle's own `MSScan.xsd` lists it in
+    /// `ScanRecordType` after `IonMode`: an int32 at record offset 64 for
+    /// strides 196, 216, 220 and 284, and an int16 at offset 62 for stride
+    /// 186, whose schema declares `MSLevel` and `IonPolarity` as
+    /// `xs:short`. `0` is positive and `1` negative (see
+    /// [`ScanRecord::polarity`]).
+    pub ion_polarity: i32,
     pub mrm_channel_id: Option<u32>,
     pub target_mz: Option<f64>,
     /// Precursor collision energy in eV (record offset 76, f64). Confirmed
@@ -40,7 +50,27 @@ pub struct ScanRecord {
     pub centroid_params: Option<SpectrumParams>,
 }
 
+impl ScanRecord {
+    /// Ion polarity from [`ScanRecord::ion_polarity`]: `0` is positive and
+    /// `1` negative, the encoding the bundle's `MSActualDefs.xml` gives for
+    /// the "Ion Polarity" actual (`0=Postive,1=Negative`). Any other value
+    /// is not interpreted and returns `None`.
+    pub fn polarity(&self) -> Option<Polarity> {
+        match self.ion_polarity {
+            0 => Some(Polarity::Positive),
+            1 => Some(Polarity::Negative),
+            _ => None,
+        }
+    }
+}
+
+/// Record strides of Q-TOF acquisitions (see `docs/format/01-msscan.md`).
+pub fn is_qtof_stride(stride: u32) -> bool {
+    matches!(stride, 216 | 220 | 284)
+}
+
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct MSScan {
     pub global_header_size: u32,
     pub stride: u32,
@@ -88,7 +118,7 @@ impl MSScan {
             );
             for s in possible_strides.iter() {
                 let s_val = *s as usize;
-                if payload_len % s_val == 0 {
+                if payload_len.is_multiple_of(s_val) {
                     if payload_len == s_val {
                         stride = *s;
                         break;
@@ -104,7 +134,7 @@ impl MSScan {
 
                         if (ms_level_2 == 1 || ms_level_2 == 2)
                             && next_scan_id > first_scan_id
-                            && next_scan_id < first_scan_id + 100000
+                            && next_scan_id < first_scan_id.saturating_add(100000)
                         {
                             stride = *s;
                             break;
@@ -136,14 +166,31 @@ impl MSScan {
             };
             let retention_time_min = LittleEndian::read_f64(&record_bytes[12..20]);
             let ms_level = LittleEndian::read_u16(&record_bytes[20..22]) as u32;
+            // IonPolarity: the field after IonMode in the bundle's
+            // MSScan.xsd ScanRecordType. Stride 186 packs MSLevel and
+            // IonPolarity as int16, which puts it at 62.
+            let ion_polarity = if stride == 186 {
+                i32::from(LittleEndian::read_i16(&record_bytes[62..64]))
+            } else {
+                LittleEndian::read_i32(&record_bytes[64..68])
+            };
 
             let mut min_x = None;
             let mut max_x = None;
+            let mut tic = None;
+            let mut base_peak_mz = None;
             let mut base_peak_intensity = None;
-            let mut unidentified_offset_36 = None;
-            if stride >= 284 {
-                unidentified_offset_36 = Some(LittleEndian::read_f64(&record_bytes[36..44]));
+            let mut calibration_id = None;
+            // Field order from the bundle's MSScan.xsd ScanRecord: ScanID,
+            // ScanMethodID, TimeSegmentID, ScanTime, MSLevel, ScanType, TIC
+            // (28), BasePeakMZ (36), BasePeakValue (44), CalibrationID (52).
+            if is_qtof_stride(stride) {
+                tic = Some(LittleEndian::read_f64(&record_bytes[28..36]));
+                base_peak_mz = Some(LittleEndian::read_f64(&record_bytes[36..44]));
                 base_peak_intensity = Some(LittleEndian::read_f64(&record_bytes[44..52]));
+                calibration_id = Some(LittleEndian::read_i32(&record_bytes[52..56]));
+            }
+            if stride >= 284 {
                 min_x = Some(LittleEndian::read_f64(&record_bytes[244..252]));
                 max_x = Some(LittleEndian::read_f64(&record_bytes[252..260]));
             }
@@ -221,8 +268,11 @@ impl MSScan {
                 ms_level,
                 min_x,
                 max_x,
+                tic,
+                base_peak_mz,
                 base_peak_intensity,
-                unidentified_offset_36,
+                calibration_id,
+                ion_polarity,
                 mrm_channel_id,
                 target_mz,
                 collision_energy,
@@ -285,6 +335,16 @@ mod tests {
         }
     }
 
+    /// A first ScanID near `u32::MAX` must not overflow the stride probe's
+    /// `first_scan_id.saturating_add(100000)` window (a panic in debug builds).
+    #[test]
+    fn stride_probe_does_not_overflow_on_large_first_scan_id() {
+        let bytes = msscan_bytes(284, &[(u32::MAX - 100, 1), (u32::MAX - 99, 1)]);
+        let scan = MSScan::from_bytes(&bytes).expect("parse");
+        assert_eq!(scan.stride, 284);
+        assert_eq!(scan.records.len(), 2);
+    }
+
     #[test]
     fn detects_stride_from_single_exact_record() {
         // With exactly one record, the probe short-circuits on
@@ -297,96 +357,117 @@ mod tests {
     }
 
     #[test]
-    fn parses_stride_284_base_peak_intensity() {
-        let mut bytes = header();
-        let mut r = record(284, 1, 1);
-        LittleEndian::write_f64(&mut r[44..52], 1_572_319.625);
-        bytes.extend(r);
+    fn parses_qtof_summary_fields() {
+        for &stride in &[284u32, 220, 216] {
+            let mut bytes = header();
+            let mut r = record(stride as usize, 1, 1);
+            LittleEndian::write_f64(&mut r[28..36], 2.5e7);
+            LittleEndian::write_f64(&mut r[36..44], 513.9653233122384);
+            LittleEndian::write_f64(&mut r[44..52], 1_572_319.625);
+            LittleEndian::write_i32(&mut r[52..56], 3);
+            bytes.extend(r);
 
-        let scan = MSScan::from_bytes(&bytes).unwrap();
-        assert_eq!(scan.records[0].base_peak_intensity, Some(1_572_319.625));
+            let rec = &MSScan::from_bytes(&bytes).unwrap().records[0];
+            assert_eq!(rec.tic, Some(2.5e7), "stride {stride}");
+            assert_eq!(rec.base_peak_mz, Some(513.9653233122384), "stride {stride}");
+            assert_eq!(
+                rec.base_peak_intensity,
+                Some(1_572_319.625),
+                "stride {stride}"
+            );
+            assert_eq!(rec.calibration_id, Some(3), "stride {stride}");
+        }
     }
 
+    /// `IonPolarity` follows `IonMode` in the bundle's MSScan.xsd: int32 at
+    /// offset 64, except stride 186 where it is int16 at offset 62.
     #[test]
-    fn leaves_base_peak_intensity_absent_for_other_strides() {
-        for &stride in &[220u32, 216, 196, 186] {
-            let scan = MSScan::from_bytes(&msscan_bytes(stride, &[(1, 1)])).unwrap();
-            assert_eq!(scan.records[0].base_peak_intensity, None);
+    fn parses_ion_polarity_for_every_stride() {
+        for &stride in &[284u32, 220, 216, 196, 186] {
+            let mut bytes = header();
+            for value in [0i32, 1, 7] {
+                let mut r = record(stride as usize, value as u32 + 1, 1);
+                if stride == 186 {
+                    LittleEndian::write_i16(&mut r[62..64], value as i16);
+                } else {
+                    LittleEndian::write_i32(&mut r[64..68], value);
+                }
+                bytes.extend(r);
+            }
+            let scan = MSScan::from_bytes(&bytes).unwrap();
+            assert_eq!(scan.stride, stride);
+            let raw: Vec<i32> = scan.records.iter().map(|r| r.ion_polarity).collect();
+            assert_eq!(raw, [0, 1, 7], "stride {stride}");
+            let polarity: Vec<_> = scan.records.iter().map(ScanRecord::polarity).collect();
+            assert_eq!(
+                polarity,
+                [Some(Polarity::Positive), Some(Polarity::Negative), None],
+                "stride {stride}"
+            );
         }
     }
 
     #[test]
-    fn parses_stride_284_unidentified_offset_36() {
-        let mut bytes = header();
-        let mut r = record(284, 1, 1);
-        LittleEndian::write_f64(&mut r[36..44], 513.9653233122384);
-        bytes.extend(r);
-
-        let scan = MSScan::from_bytes(&bytes).unwrap();
-        assert_eq!(
-            scan.records[0].unidentified_offset_36,
-            Some(513.9653233122384)
-        );
-    }
-
-    #[test]
-    fn leaves_unidentified_offset_36_absent_for_other_strides() {
-        for &stride in &[220u32, 216, 196, 186] {
-            let scan = MSScan::from_bytes(&msscan_bytes(stride, &[(1, 1)])).unwrap();
-            assert_eq!(scan.records[0].unidentified_offset_36, None);
+    fn leaves_qtof_summary_fields_absent_for_qqq_strides() {
+        for &stride in &[196u32, 186] {
+            let rec = &MSScan::from_bytes(&msscan_bytes(stride, &[(1, 1)]))
+                .unwrap()
+                .records[0];
+            assert_eq!(rec.tic, None);
+            assert_eq!(rec.base_peak_mz, None);
+            assert_eq!(rec.base_peak_intensity, None);
+            assert_eq!(rec.calibration_id, None);
         }
     }
 
     /// Corpus files live out of tree (large real-world acquisitions, not
-    /// checked into the repo - see the fixture pattern in
-    /// `crates/openaraw/tests/conformance.rs`), so this test skips cleanly
-    /// when the fixture isn't present locally instead of failing the build.
+    /// checked into the repo). This fixture is only in the full research
+    /// corpus, not in CI's downloaded fixtures, so the test skips when
+    /// `OPENARAW_CORPUS` is unset. If `OPENARAW_CORPUS` is set but the
+    /// bundle is missing, it fails rather than skipping.
     /// Exercises the real stride-284 record bytes (PXD001310, per
-    /// `docs/format/01-msscan.md`'s validated corpus table and
-    /// Sigilweaver/OpenARaw#19) to confirm offset 36 decodes to a sensible
-    /// finite value rather than only ever being checked against synthetic
-    /// buffers.
+    /// `docs/format/01-msscan.md`'s validated corpus table) to confirm the
+    /// summary fields decode to sensible values rather than only ever being
+    /// checked against synthetic buffers.
     #[test]
-    fn stride_284_offsets_36_and_44_decode_from_real_corpus() {
-        let path = std::path::Path::new(
-            "/workspaces/Projects/Data/ARaw/PXD001310/2013-02-26-001 EF CR DMSO 60m r1.d/AcqData/MSScan.bin",
-        );
-        if !path.exists() {
-            eprintln!("skip: no PXD001310 corpus fixture available");
+    fn stride_284_summary_fields_decode_from_real_corpus() {
+        let Some(root) = std::env::var_os("OPENARAW_CORPUS") else {
+            eprintln!("skip: OPENARAW_CORPUS not set");
             return;
-        }
+        };
+        let path = std::path::Path::new(&root)
+            .join("PXD001310/2013-02-26-001 EF CR DMSO 60m r1.d/AcqData/MSScan.bin");
+        assert!(
+            path.exists(),
+            "OPENARAW_CORPUS is set but {} is missing",
+            path.display()
+        );
 
-        let scan = MSScan::from_path(path).expect("parse real PXD001310 MSScan.bin");
+        let scan = MSScan::from_path(&path).expect("parse real PXD001310 MSScan.bin");
         assert_eq!(scan.stride, 284);
         assert!(!scan.records.is_empty());
 
         for rec in &scan.records {
-            let v36 = rec
-                .unidentified_offset_36
-                .expect("offset 36 decoded for stride 284");
-            let v44 = rec
+            let tic = rec.tic.expect("TIC decoded for stride 284");
+            let bp_mz = rec.base_peak_mz.expect("BasePeakMZ decoded for stride 284");
+            let bp_int = rec
                 .base_peak_intensity
-                .expect("offset 44 decoded for stride 284");
-            assert!(v36.is_finite(), "offset 36 should be a finite double");
-            assert!(v44.is_finite(), "offset 44 should be a finite double");
-            // The two offsets are documented as distinct quantities (see
-            // docs/format/01-msscan.md) - confirm the fixture doesn't
-            // regress to reading the same bytes for both.
-            assert_ne!(v36, v44);
+                .expect("BasePeakValue decoded for stride 284");
+            assert!(
+                tic.is_finite() && tic >= bp_int,
+                "TIC {tic} < base peak {bp_int}"
+            );
+            assert!(bp_mz.is_finite() && bp_mz >= 0.0);
         }
 
         // Spot-check the first record's exact value to catch an accidental
         // offset shift, not just "some finite number".
         assert_eq!(scan.records[0].scan_id, 2271);
-        assert_eq!(
-            scan.records[0].unidentified_offset_36,
-            Some(513.9653233122384)
-        );
+        assert_eq!(scan.records[0].base_peak_mz, Some(513.9653233122384));
         assert_eq!(scan.records[0].base_peak_intensity, Some(1_572_319.625));
     }
 
-    /// Regression test for the bounds guard fixed alongside the stride
-    /// probe: a payload of 1..=3 bytes is too short for the 4-byte ScanID
+    /// Bounds guard in the stride probe: a payload of 1..=3 bytes is too short for the 4-byte ScanID
     /// the probe reads, and must produce a parse error rather than
     /// panicking on an out-of-bounds slice.
     #[test]

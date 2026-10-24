@@ -7,6 +7,175 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-11
+
+This release changes the public Rust API (see Breaking, Changed and
+Removed) and ships as 1.0.0. From 1.0.0 on, fixes and new fields ship as
+minor or patch releases.
+
+### Breaking
+
+- Requires `openmassspec-core` 3.0.0. `Reader::iter_spectra` yields
+  `openmassspec_core::Result<SpectrumRecord>` and `iter_chromatograms`
+  yields `openmassspec_core::Result<ChromatogramRecord>`.
+- A scan whose payload block cannot be read or decoded is yielded as an
+  `Err` (wrapping the new `Error::Scan { scan_id, block, source }`)
+  instead of a spectrum with empty arrays. This includes Q-TOF scans
+  without a usable mass calibration. A failed profile block no longer
+  falls back to the scan's centroid block. In the corpus this affects
+  `PXD022473/M.d` (no `MSProfile.bin`) and `PXD031771/655_2.d` (no
+  calibration). `openmassspec_core::write_mzml` now stops at the first
+  such scan; pass `RecordErrorPolicy::Skip` to write the rest.
+- `iter_chromatograms` yields a single `Err` when any spectrum fails to
+  decode, instead of TIC/BPC traces with zero points for failed scans.
+- `openaraw::Error` is `#[non_exhaustive]` and has a new `Scan` variant.
+  `From<openaraw::Error> for openmassspec_core::Error` is implemented
+  (`Io` maps to `Error::Io`, the rest to `Error::Vendor`).
+- `Reader` fields `dir`, `bundle_name`, `msscan` and `device` are
+  private. Use the new `Reader::dir()`, `Reader::bundle_name()`,
+  `Reader::msscan()` and `Reader::device()` accessors.
+- `#[non_exhaustive]` on the public enums `raw::calibration::CalibrationSource`
+  and `raw::msprofile::ProfileEncoding`, and on the public structs
+  `raw::msscan::{MSScan, ScanRecord, SpectrumParams}`,
+  `raw::metadata::DeviceInfo`,
+  `raw::calibration::{TofCalibration, PolynomialStep}`,
+  `raw::defaultmasscal::DefaultCalibration`,
+  `raw::msmasscal::MassCalRecord`, `raw::mspeak::PeakSpectrum`,
+  `raw::msprofile::{ProfileSpectrum, ProfileAxis}` and
+  `raw::msperiodicactuals::ActualsRecord`. Fields stay public and
+  readable; struct literals and exhaustive matches outside the crate no
+  longer compile.
+- `raw::msperiodicactuals::parse` returns an error for a file shorter
+  than its 68-byte header instead of an empty list.
+- Python: `RawReader(path)` raises `RuntimeError` when any scan cannot be
+  decoded; `iter_spectra(path)` raises when it reaches such a scan; and
+  `read_chromatograms()` raises instead of returning traces with zero
+  points. Other Python names and return types are unchanged.
+
+### Added
+
+- Spectrum polarity. `SpectrumRecord::polarity` is set from the scan
+  record's `IonPolarity` field, located by the field order of the
+  bundle's own `MSScan.xsd` (int32 at offset 64; int16 at offset 62 for
+  stride 186) and decoded as `0` positive, `1` negative per
+  `MSActualDefs.xml`. Other values leave `polarity` unset, put the raw
+  value in `extra["openaraw.ion_polarity"]` and are logged at warn level.
+  New public items: `ScanRecord::ion_polarity`, `ScanRecord::polarity()`;
+  Python `scan_index()` records gain `ion_polarity`. Checked on all 332
+  corpus bundles: only `0` and `1` occur, matching each method's
+  `ionPolarity` settings. Six PXD031771 runs switch polarity by time
+  segment (228 negative scan records, 190 of them decodable spectra;
+  `655_2.d` has no calibration); every other bundle is positive. New
+  corpus test `tests/polarity.rs`.
+- `Reader::profile_decode_failures()` and
+  `Reader::centroid_decode_failures()` count the scans yielded as errors
+  because a payload block failed to read or decode. Failures are logged
+  through the `log` crate (first per kind at warn, the rest at debug).
+  New dependency: `log` 0.4.
+- `raw::calibration::CalibrationSource::as_str()`.
+- Q-TOF flight-time calibration. Centroid x-values and the profile axis
+  are converted with `m/z = (A * (t - T0))^2 - P(clamp(t, t_min, t_max))`,
+  where the `Polynomial` step's powers are the set bits of its
+  `ValueUseFlags` in `DefaultMassCal.xml`. Each scan uses its own
+  `MSMassCal.bin` record, or the `DefaultMassCal.xml` entry for its
+  `CalibrationID` when the bundle has no `MSMassCal.bin` (35 of 224
+  corpus Q-TOF bundles). Reproduces the stored `BasePeakMZ` across the
+  corpus. New public items: `raw::calibration` (`TofCalibration`,
+  `PolynomialStep`, `CalibrationSource`), `raw::defaultmasscal`,
+  `raw::msmasscal::parse_bytes`, `raw::msscan::is_qtof_stride`,
+  `raw::msprofile::ProfileAxis`, `Reader::calibration()`.
+- `ScanRecord::tic`, `ScanRecord::base_peak_mz` and
+  `ScanRecord::calibration_id` (`MSScan.bin` offsets 28, 36, 52) for
+  Q-TOF records; spectra now carry `total_ion_current` and
+  `base_peak_mz`, and `extra["openaraw.calibration_id"]`. The Python
+  `scan_index()` records expose the same fields plus
+  `calibration_source`.
+- `qtof_calibration_check` example and corpus test
+  (`tests/qtof_calibration.rs`) measuring decoded base peak m/z against
+  the stored `BasePeakMZ` (median / p95 ppm), summed intensity against
+  `TIC`, and reference-mass ions.
+- `OPENARAW_CORPUS` and `REQUIRE_CORPUS=1` environment variables for
+  corpus-backed tests and the `corpus_scan` example, replacing hardcoded
+  `/workspaces/...` paths. CI now fails if a downloaded fixture is
+  missing instead of skipping.
+
+### Changed
+
+- README "Known issues and gaps": measured Q-TOF m/z accuracy and the
+  runs that read 10 to 20 ppm off, stored precursor m/z versus MS1,
+  product-only MRM spectra, bundles that raise errors, and corpus gaps.
+- Breaking: `raw::mspeak::decode_peak_block` takes an
+  `Option<&TofCalibration>` (required for Q-TOF blocks), and
+  `raw::msprofile::decode_profile_block` takes a `&TofCalibration`
+  instead of `min_x` / `max_x`.
+- Breaking: `raw::msscan::ScanRecord` has new public fields (`tic`,
+  `base_peak_mz`, `calibration_id`), so struct literals must set them.
+- Breaking: `raw::msmasscal::parse` returns an error for a file shorter
+  than its header, a partial trailing record or an oversized coefficient
+  count, instead of an empty or truncated list.
+- Minimum supported Rust version is now 1.88, matching
+  `openmassspec-core` 2.0.0.
+
+### Removed
+
+- Breaking: `ScanRecord::unidentified_offset_36` and the
+  `openaraw.msscan_offset36_unidentified` spectrum extra; the value is
+  now `ScanRecord::base_peak_mz`.
+- Unused public `reader::DecodedSpectrum` enum. Technically a breaking
+  API removal; nothing constructed or consumed it.
+
+### Fixed
+
+- `SpectrumRecord::polarity` was `None` for every spectrum, so mzML
+  output carried no polarity term; it is now decoded (see Added).
+- Bundles without a usable `Devices.xml` and with 216-byte `MSScan.bin`
+  records are labeled Q-TOF (`TOFMS`, "Agilent Q-TOF") instead of QQQ.
+  The record-size fallback treats 216, 220 and 284 as Q-TOF and 186 and
+  196 as QQQ. Affected `PXD031771/655_2.d` in the corpus.
+- Q-TOF centroid m/z is no longer the raw flight time divided by 100,
+  and Q-TOF payloads without a usable calibration are errors instead of
+  being reported as m/z.
+- A scan whose profile block holds no points and which has a centroid
+  block is labelled centroid (it carries the centroid data); it was
+  labelled profile.
+- Profile blocks: the LZF stream starts at byte 0 of the block and
+  decompresses to an `f64` start time and `f64` sampling period followed
+  by the intensities; the old 16-byte-preamble layout failed on every
+  real block.
+- Profile spectra from acquisition software 10.1 (`PXD044639`) are
+  decoded. Their `MSProfile.bin` blocks are run-length encoded, not LZF:
+  the axis header is stored as is, followed by a stream of signed
+  integers of varying width where a negative value skips zero points and
+  sets the width of the values that follow (see
+  `docs/format/04-msprofile.md`). The reader detects the encoding per
+  block. All 192,503 blocks in the 13 corpus bundles decode, and every
+  scan's summed intensity and maximum equal the stored `TIC` and
+  `BasePeakValue` exactly. A block that fails to decode is an error. New public items:
+  `raw::msprofile::ProfileEncoding`, `raw::msprofile::RUN_LENGTH_MARKER`,
+  `raw::msprofile::decode_run_length`. New corpus test
+  `tests/profile_run_length.rs` and `spectra_digest` example (digest of
+  a bundle's full reader output, for comparing builds).
+- `RunMetadata` now reports `MS:1001509` (Agilent MassHunter format) and
+  `MS:1001508` (Agilent MassHunter nativeID format). It previously used
+  `MS:1002846` and `MS:1002848`, which are PRIDE file-URI terms.
+- Q-TOF MS2 `precursor_native_id` no longer points at the spectrum's own
+  scan; it is `None` until the parent scan (DDScanID) is decoded.
+- `MSScan.bin` stride detection no longer overflows when the first
+  ScanID is near `u32::MAX`.
+- `Devices.xml` and `Contents.xml` read errors (other than a missing
+  file) and XML parse errors are logged at warn level instead of being
+  ignored.
+- Docs: `IonPolarity` is at `MSScan.bin` record offset 64 (per the
+  bundle's `MSScan.xsd`, checked on PXD031771); the docs said polarity
+  was not recoverable.
+- Docs: README "Known issues" and format doc status lines for Q-TOF m/z
+  and profile decoding, which the docs marked as confirmed.
+- Docs: `MSPeak.bin` Q-TOF x-values are flight times (not `m/z * 100`),
+  `MSMassCal.bin` coefficients are not pre-applied, the `MSProfile.bin`
+  block layout is corrected, `MSScan.bin` offsets 28/36/52 are
+  `TIC`/`BasePeakMZ`/`CalibrationID`, and the calibration formula and
+  `DefaultMassCal.xml` layout are documented.
+
 ## [0.2.0] - 2026-09-28
 
 ### Added
@@ -17,6 +186,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Breaking: `raw::mspeak::decode_peak_block` takes an
+  `Option<&TofCalibration>` (required for Q-TOF blocks), and
+  `raw::msprofile::decode_profile_block` takes a `&TofCalibration`
+  instead of `min_x` / `max_x`.
+- Breaking: `raw::msscan::ScanRecord` has new public fields (`tic`,
+  `base_peak_mz`, `calibration_id`), so struct literals must set them.
+- Breaking: `raw::msmasscal::parse` returns an error for a file shorter
+  than its header, a partial trailing record or an oversized coefficient
+  count, instead of an empty or truncated list.
 - Adopts `openmassspec-core` 2.0.0 (arrow 60). Rust users building against
   core 1.x must upgrade core too.
 
@@ -35,6 +213,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Breaking: `raw::mspeak::decode_peak_block` takes an
+  `Option<&TofCalibration>` (required for Q-TOF blocks), and
+  `raw::msprofile::decode_profile_block` takes a `&TofCalibration`
+  instead of `min_x` / `max_x`.
+- Breaking: `raw::msscan::ScanRecord` has new public fields (`tic`,
+  `base_peak_mz`, `calibration_id`), so struct literals must set them.
+- Breaking: `raw::msmasscal::parse` returns an error for a file shorter
+  than its header, a partial trailing record or an oversized coefficient
+  count, instead of an empty or truncated list.
 - Adopt `openmassspec-core` 1.5.0. The new `SpectrumRecord`/`RunMetadata`
   `extra` and `acquisition_event_id` fields are defaulted (empty / `None`);
   no field is populated yet, so output is unchanged.
@@ -201,6 +388,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Breaking: `raw::mspeak::decode_peak_block` takes an
+  `Option<&TofCalibration>` (required for Q-TOF blocks), and
+  `raw::msprofile::decode_profile_block` takes a `&TofCalibration`
+  instead of `min_x` / `max_x`.
+- Breaking: `raw::msscan::ScanRecord` has new public fields (`tic`,
+  `base_peak_mz`, `calibration_id`), so struct literals must set them.
+- Breaking: `raw::msmasscal::parse` returns an error for a file shorter
+  than its header, a partial trailing record or an oversized coefficient
+  count, instead of an empty or truncated list.
 - `crates/openaraw/src/raw/msperiodicactuals.rs`'s `parse()` no longer
   unconditionally returns an empty `Vec`. It now decodes the confirmed
   68-byte header / 20-byte record layout (see

@@ -11,7 +11,7 @@
 //!
 //! Confirmed with zero exceptions across all 243 corpus files carrying
 //! this bin: `Magic` (int32) = 265 at offset 0, a fixed 68-byte global
-//! header (not a size field - see note on the old implementation below),
+//! header (not a size field - see `HEADER_SIZE` below),
 //! and a 20-byte record stride with a 4-byte trailer
 //! (`(FileSize - 68) % 20 == 4` always). Full record layout is documented
 //! in `docs/format/02-secondary-bins.md`.
@@ -37,14 +37,14 @@
 use byteorder::{ByteOrder, LittleEndian};
 use std::path::Path;
 
-/// Fixed size of the global header. Earlier code treated the `u32` at file
-/// offset 0x44 as a dynamic `global_header_size`, but that value is always
-/// `1` across the corpus - it's the leading field of the first record
-/// bleeding through, not a size. The header is a constant 68 bytes.
+/// Fixed size of the global header: a constant 68 bytes. The `u32` at file
+/// offset 0x44 is not a header size field; it is always `1` across the
+/// corpus because it is the leading field of the first record.
 const HEADER_SIZE: usize = 68;
 const RECORD_STRIDE: usize = 20;
 
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct ActualsRecord {
     /// Telemetry channel ID; defined per-instrument in `MSActualDefs.xml`
     /// (e.g. 27 = Gas Temp, 29 = Rough Vac, 57 = Charge State).
@@ -52,10 +52,16 @@ pub struct ActualsRecord {
     pub retention_time_min: f64,
 }
 
+/// Parse `MSPeriodicActuals.bin`. A file shorter than its 68-byte header
+/// is an error. Bytes after the last whole 20-byte record (the 4-byte
+/// trailer) are not read.
 pub fn parse(path: &Path) -> crate::Result<Vec<ActualsRecord>> {
     let bytes = std::fs::read(path)?;
     if bytes.len() < HEADER_SIZE {
-        return Ok(vec![]);
+        return Err(crate::Error::Parse(format!(
+            "MSPeriodicActuals.bin is {} bytes, shorter than its {HEADER_SIZE}-byte header",
+            bytes.len()
+        )));
     }
 
     let payload = &bytes[HEADER_SIZE..];
@@ -132,11 +138,11 @@ mod tests {
     }
 
     #[test]
-    fn file_smaller_than_header_returns_no_records() {
+    fn file_smaller_than_header_is_an_error() {
         let bytes = vec![0u8; HEADER_SIZE - 1];
         let path = write_temp("truncated.bin", &bytes);
-        let records = parse(&path).expect("parse should succeed");
+        let result = parse(&path);
         let _ = std::fs::remove_file(&path);
-        assert!(records.is_empty());
+        assert!(result.is_err());
     }
 }
