@@ -42,9 +42,10 @@ pub struct ScanRecord {
     pub ion_polarity: i32,
     pub mrm_channel_id: Option<u32>,
     pub target_mz: Option<f64>,
-    /// Precursor collision energy in eV (record offset 76, f64). Confirmed
-    /// alongside `target_mz` for Auto-MS/MS records - see
-    /// `docs/format/01-msscan.md`.
+    /// Precursor collision energy (record offset 76, f64), unit unknown:
+    /// the bundle's `MSScan.xsd` types the field as a bare double and no
+    /// other bundle file states its unit. Confirmed alongside `target_mz`
+    /// for Auto-MS/MS records - see `docs/format/01-msscan.md`.
     pub collision_energy: Option<f64>,
     pub profile_params: Option<SpectrumParams>,
     pub centroid_params: Option<SpectrumParams>,
