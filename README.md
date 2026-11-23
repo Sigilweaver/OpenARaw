@@ -36,11 +36,35 @@ Documentation: [sigilweaver.app/openaraw/docs](https://sigilweaver.app/openaraw/
   matching MS1 peak by about 32 ppm and 10 ppm. Use a precursor tolerance
   of at least 30 ppm, or re-pick the precursor from the MS1 scan. Q-TOF
   MS2 spectra have no parent-scan link, charge state or isolation width.
+- **Collision energy has no unit, so MS/MS to mzML fails by default.**
+  `MSScan.xsd` types the scan record's `CollisionEnergy` as a bare
+  double, and no other file in the bundle states its unit. The
+  `Volts` and `Voltage` units in `MSActualDefs.xml` belong to
+  telemetry channels (`Collision Energy:1` to `4`, `Col. Cell Energy`)
+  whose logged values differ from the scan records (`Col. Cell Energy`
+  logs about 3 where the records carry 40.0 in PXD031771/526b_1.d), so
+  they do not give the unit of the record's field. The reader reports the value with an unknown unit, and
+  the mzML writer in `openmassspec-core` 4 rejects a collision energy with
+  no unit. This affects every Q-TOF bundle with MS/MS spectra (185 of the
+  332 readable corpus bundles; MS1-only and MRM bundles convert as
+  before). To write the mzML anyway, allow the check
+  `unknown_collision_energy_unit`: the value is then written as a
+  unit-less `userParam` and each affected spectrum carries an
+  `openmassspec: warning unknown_collision_energy_unit` entry.
+
+  ```sh
+  cargo run --release --example to_mzml -- sample.d out.mzML --allow unknown_collision_energy_unit
+  ```
+
+  In Rust code, pass
+  `WriteOptions::new().with_leniency(Leniency::strict().with(Check::UnknownCollisionEnergyUnit))`
+  to `write_mzml_with_options`. In Python, `collision_energies[i]["unit"]`
+  is `None`.
 - **Triple quadrupole (MRM) spectra report only the product m/z.** The
-  precursor m/z is not set and per-transition SRM chromatograms are not
-  emitted; each spectrum carries its MRM channel number
-  (`precursor_native_id = "mrm_channel=N"`). Product m/z values are stored
-  directly and match the method's transitions.
+  precursor m/z and the collision energy are not set and per-transition
+  SRM chromatograms are not emitted; each spectrum carries its MRM channel
+  number in `extra["openaraw.mrm_channel_id"]`. Product m/z values are
+  stored directly and match the method's transitions.
 - **Bundles that cannot be decoded raise errors.** A Q-TOF bundle with
   neither `MSMassCal.bin` nor `DefaultMassCal.xml` has no calibration
   (`PXD031771/655_2.d`), and a bundle whose scan records point into a

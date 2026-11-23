@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+This release moves to `openmassspec-core` 4 and ships as 2.0.0. Core's
+changes and how to adapt to them are in
+[MIGRATING-4.0.md](https://github.com/Sigilweaver/OpenMassSpecCore/blob/main/MIGRATING-4.0.md)
+in OpenMassSpecCore.
+
+### Changed
+
+- Python: the minimum version is 3.10 (`requires-python = ">=3.10"`), and
+  the wheel is one abi3 wheel built for 3.10 (`abi3-py310`) instead of a
+  wheel per interpreter.
+- Requires `openmassspec-core` 4.0.0. Collision energy is
+  `PrecursorInfo::collision_energies`, a list of value and unit;
+  `retention_time_sec` is `Option<f64>`; `SpectrumIter` and
+  `ChromatogramIter` are `Send`.
+- The collision energy of a Q-TOF MS/MS scan has an unknown unit. It was
+  written as eV by Core 3 on the assumption that the field is in eV, but no
+  file in the bundle states the unit (see Known issues in the README).
+  `write_mzml` therefore rejects every Q-TOF MS/MS spectrum with
+  `collision energy is set but its unit (eV or NCE) is not known` unless the
+  check `unknown_collision_energy_unit` is allowed
+  (`WriteOptions::with_leniency`; `to_mzml --allow
+  unknown_collision_energy_unit`). MS1-only and MRM bundles are not affected.
+- A scan record that names neither a profile nor a centroid block has
+  `scan_mode = None` (it was `Centroid`). Core's writer rejects it unless
+  `unknown_scan_mode` is allowed. No corpus bundle has such a scan.
+- Python: the precursor dict has `collision_energies` (a list of
+  `{"value", "unit"}`; `unit` is `None`) in place of `collision_energy` and
+  `ce_is_nce`. `retention_time_sec` is `float | None`. The analyzer label of a
+  Q-TOF spectrum is `"tof"` (it was `"tofms"`).
+- The `to_mzml` example takes `--allow CHECK` (repeatable), prints the
+  write summary and exits with an error code instead of panicking.
+
+### Fixed
+
+- QQQ MRM spectra no longer carry `precursor_native_id = "mrm_channel=N"`.
+  That string named no spectrum, so it was a dangling `spectrumRef` in the
+  mzML. The channel number stays in `extra["openaraw.mrm_channel_id"]`.
+  Affects all 108 MRM bundles in the corpus. The Python `precursor` dict
+  has `precursor_native_id = None` for them.
+- Documentation no longer states that the collision energy is in eV.
+
 ## [1.0.0] - 2026-10-11
 
 This release changes the public Rust API (see Breaking, Changed and

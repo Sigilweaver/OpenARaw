@@ -46,7 +46,11 @@ for i in range(reader.scan_count):
 | `mz`                  | `list[float]` | m/z values (float64)                 |
 | `intensity`           | `list[float]` | Intensities (float32)                |
 | `ms_level`            | `int`         | MS level (1 for MS1, 2+ for MS/MS)   |
-| `retention_time_sec`  | `float`       | Retention time in seconds            |
+| `retention_time_sec`  | `float \| None` | Retention time in seconds (always set by this reader) |
+| `scan_mode`           | `str \| None` | `"profile"`, `"centroid"`, or `None` for a scan with no payload block |
+| `analyzer`            | `str \| None` | `"tof"` (Q-TOF) or `"tqms"` (QQQ)    |
+| `precursor`           | `dict \| None` | MS2+ only, see below                 |
+| `extra`               | `dict[str, str]` | Reader-specific values, such as `openaraw.mrm_channel_id` |
 
 `len(spectrum)` returns the peak count. See [Scan data](./scan-data) for
 how `mz`/`intensity` are derived from the on-disk profile and centroid
@@ -56,6 +60,22 @@ records.
 spectrum = reader.read_spectrum(0)
 print(spectrum.ms_level, spectrum.retention_time_sec, len(spectrum))
 mz, intensity = spectrum.mz, spectrum.intensity
+```
+
+### `precursor`
+
+For MS2+ spectra `precursor` is a dict with `target_mz`, `selected_mz`,
+`isolation_width`, `charge`, `intensity`, `collision_energies`,
+`precursor_native_id`, `activation`, `analyzer` and `ccs`. Q-TOF MS/MS
+scans set `target_mz` and one collision energy; QQQ MRM scans set neither
+(the channel is in `spectrum.extra["openaraw.mrm_channel_id"]`).
+
+`collision_energies` is a list of `{"value": float, "unit": str | None}`.
+The file does not state the unit, so `unit` is `None`:
+
+```python
+>>> spectrum.precursor["collision_energies"]
+[{'value': 13.15, 'unit': None}]
 ```
 
 ## Next
