@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 const USAGE: &str = "Usage: to_mzml <input.d> <output.mzML> [--allow CHECK]...\n\
-     CHECK is a Core check name, for example unknown_collision_energy_unit";
+     CHECK is a Core check name, for example unknown_scan_mode";
 
 fn main() -> ExitCode {
     let mut positional = Vec::new();

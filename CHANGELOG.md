@@ -21,14 +21,15 @@ in OpenMassSpecCore.
   `PrecursorInfo::collision_energies`, a list of value and unit;
   `retention_time_sec` is `Option<f64>`; `SpectrumIter` and
   `ChromatogramIter` are `Send`.
-- The collision energy of a Q-TOF MS/MS scan has an unknown unit. It was
-  written as eV by Core 3 on the assumption that the field is in eV, but no
-  file in the bundle states the unit (see Known issues in the README).
-  `write_mzml` therefore rejects every Q-TOF MS/MS spectrum with
-  `collision energy is set but its unit (eV or NCE) is not known` unless the
-  check `unknown_collision_energy_unit` is allowed
-  (`WriteOptions::with_leniency`; `to_mzml --allow
-  unknown_collision_energy_unit`). MS1-only and MRM bundles are not affected.
+- The collision energy of a Q-TOF MS/MS scan has an unknown unit. Core 3
+  wrote it as eV on the assumption that the field is in eV, but no file in
+  the bundle states the unit (see Known issues in the README). The reader
+  declares this in `RunMetadata::unstated`
+  (`Check::UnknownCollisionEnergyUnit`), so `write_mzml` converts every
+  Q-TOF MS/MS bundle with default options: the value is a unit-less
+  `userParam`, each MS/MS spectrum carries an `unknown_collision_energy_unit`
+  warning and the run carries one `unstated_by_source` warning. MS1-only and
+  MRM bundles are not affected.
 - A scan record that names neither a profile nor a centroid block has
   `scan_mode = None` (it was `Centroid`). Core's writer rejects it unless
   `unknown_scan_mode` is allowed. No corpus bundle has such a scan.
@@ -41,6 +42,14 @@ in OpenMassSpecCore.
 
 ### Fixed
 
+- A spectrum with no peaks carries the Core warning `empty_spectrum` and
+  declares no base peak and no m/z range. Before, such a spectrum had no
+  flag and reported a base peak of 0 at m/z 0. The values in the scan record
+  stay in `extra` as `openaraw.reported_base_peak_mz`,
+  `openaraw.reported_base_peak_intensity`, `openaraw.reported_low_mz` and
+  `openaraw.reported_high_mz`. In `180814-Sample19.d` (CI fixture) this is
+  2,226 of 4,116 MS1 spectra; `Cdc19_ubp2_AQUA.d` has none. In Python,
+  `base_peak_mz` and `base_peak_intensity` of such a spectrum are `None`.
 - QQQ MRM spectra no longer carry `precursor_native_id = "mrm_channel=N"`.
   That string named no spectrum, so it was a dangling `spectrumRef` in the
   mzML. The channel number stays in `extra["openaraw.mrm_channel_id"]`.

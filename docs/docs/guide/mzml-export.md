@@ -23,32 +23,23 @@ let mut out = std::fs::File::create("output.mzML")?;
 write_mzml(&mut reader, &mut out)?;
 ```
 
-The writer checks every record and stops at the first one it rejects. A
-Q-TOF MS/MS spectrum is rejected by default because its collision energy
-has no unit (the file does not state one, see [MSScan.bin](../format/msscan)):
-
-```text
-invalid record "scanId=210655": collision energy is set but its unit (eV or NCE) is not known
-```
-
-Allow the check `unknown_collision_energy_unit` to write the value as a
-unit-less `userParam` and put an `openmassspec: warning
-unknown_collision_energy_unit` entry on each affected spectrum:
-
-```sh
-cargo run --release --example to_mzml -- sample.d output.mzML --allow unknown_collision_energy_unit
-```
+The writer checks every record and stops at the first one it rejects.
+A Q-TOF MS/MS collision energy has no unit (the file does not state one,
+see [MSScan.bin](../format/msscan)), and the reader declares that in
+`RunMetadata::unstated`, so the bundle converts with default options. The
+value is written as a unit-less `userParam`, each MS/MS spectrum carries an
+`openmassspec: warning unknown_collision_energy_unit` entry, and the run
+carries one `unstated_by_source` warning:
 
 ```rust
-use openmassspec_core::{write_mzml_with_options, Check, Leniency, WriteOptions};
+use openmassspec_core::write_mzml;
 
-let opts = WriteOptions::new()
-    .with_leniency(Leniency::strict().with(Check::UnknownCollisionEnergyUnit));
-let summary = write_mzml_with_options(&mut reader, &mut out, &opts)?;
+let summary = write_mzml(&mut reader, &mut out)?;
 println!("{:?}", summary.warning_counts);
 ```
 
-MS1-only and QQQ MRM bundles convert without the check.
+A spectrum with no peaks carries an `empty_spectrum` warning and declares
+no base peak and no m/z range.
 
 The writer also stops at the first spectrum that fails to decode and returns
 its error. To write the decodable spectra of a damaged bundle instead,
