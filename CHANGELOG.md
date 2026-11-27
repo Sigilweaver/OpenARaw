@@ -52,7 +52,9 @@ in OpenMassSpecCore.
   `base_peak_mz` and `base_peak_intensity` of such a spectrum are `None`.
 - QQQ MRM spectra no longer carry `precursor_native_id = "mrm_channel=N"`.
   That string named no spectrum, so it was a dangling `spectrumRef` in the
-  mzML. The channel number stays in `extra["openaraw.mrm_channel_id"]`.
+  mzML. `precursor_native_id` holds a spectrum reference, not a channel, so the
+  channel number stays in `extra["openaraw.mrm_channel_id"]` (a `userParam` in
+  the mzML, `spectrum.extra` in Python).
   Affects all 108 MRM bundles in the corpus. The Python `precursor` dict
   has `precursor_native_id = None` for them.
 - Documentation no longer states that the collision energy is in eV.
