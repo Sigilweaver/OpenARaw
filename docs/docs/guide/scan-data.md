@@ -39,11 +39,21 @@ MS2+ spectra populate `SpectrumRecord.precursor`:
 
 - **Q-TOF Auto-MS/MS**: `target_mz` is read directly from the scan record
   (`MSScan.bin` offset 84) - the isolation window center Agilent's
-  acquisition firmware selected for that MS2 scan.
+  acquisition firmware selected for that MS2 scan. The collision energy
+  comes from offset 76 as one `collision_energies` entry whose unit is
+  `None`: the file does not state it (see [MSScan.bin](../format/msscan)).
 - **QQQ MRM**: there is no isolation-window target in the same sense: each
   MS2 scan corresponds to one MRM transition, identified by a channel ID.
-  The reader surfaces this as `precursor_native_id` (`mrm_channel=<id>`)
-  rather than a `target_mz`.
+  The reader surfaces the channel ID as `extra["openaraw.mrm_channel_id"]`.
+  `target_mz`, `precursor_native_id` and `collision_energies` stay unset:
+  the channel names no spectrum, and the record holds no collision energy.
+
+## Scan mode
+
+`scan_mode` is `Profile` when the scan's profile block was used and
+`Centroid` when its centroid or MRM block was used. A scan record that
+names neither block yields empty arrays and `scan_mode = None`; the
+mzML writer rejects it unless the check `unknown_scan_mode` is allowed.
 
 ## Polarity
 
@@ -56,7 +66,7 @@ the raw value in `extra["openaraw.ion_polarity"]`. See
 ## Retention time
 
 `retention_time_sec` is `MSScan.bin`'s per-record `RetentionTime` (stored
-on disk in minutes) converted to seconds. For QQQ MRM data, all channels
+on disk in minutes) converted to seconds. Every spectrum has one. For QQQ MRM data, all channels
 within one acquisition cycle share the same retention time - the
 instrument fires through its transition list once per chromatographic
 point, not once per unique retention time.

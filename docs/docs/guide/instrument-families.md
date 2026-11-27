@@ -31,9 +31,10 @@ the run.
 
 - `analyzer` on yielded spectra is `Analyzer::TQMS`.
 - Every scan is effectively MS2; there is no isolation-window `target_mz`
-  in the Q-TOF sense, so precursor identity is carried as
-  `precursor_native_id` (`mrm_channel=<id>`) instead - see
-  [Scan data](./scan-data).
+  in the Q-TOF sense and the scan record holds no Q1 m/z. The precursor
+  fields are unset and the MRM channel number is in
+  `extra["openaraw.mrm_channel_id"]` (written to mzML as a `userParam`) -
+  see [Scan data](./scan-data).
 - `MSMassCal.bin` and `DefaultMassCal.xml` are absent: QQQ m/z is stored
   directly, with no flight-time calibration.
 

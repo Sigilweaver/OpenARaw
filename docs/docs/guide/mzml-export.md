@@ -23,7 +23,25 @@ let mut out = std::fs::File::create("output.mzML")?;
 write_mzml(&mut reader, &mut out)?;
 ```
 
-The writer stops at the first spectrum that fails to decode and returns
+The writer checks every record and stops at the first one it rejects.
+A Q-TOF MS/MS collision energy has no unit (the file does not state one,
+see [MSScan.bin](../format/msscan)), and the reader declares that in
+`RunMetadata::unstated`, so the bundle converts with default options. The
+value is written as a unit-less `userParam`, each MS/MS spectrum carries an
+`openmassspec: warning unknown_collision_energy_unit` entry, and the run
+carries one `unstated_by_source` warning:
+
+```rust
+use openmassspec_core::write_mzml;
+
+let summary = write_mzml(&mut reader, &mut out)?;
+println!("{:?}", summary.warning_counts);
+```
+
+A spectrum with no peaks carries an `empty_spectrum` warning and declares
+no base peak and no m/z range.
+
+The writer also stops at the first spectrum that fails to decode and returns
 its error. To write the decodable spectra of a damaged bundle instead,
 pass `RecordErrorPolicy::Skip` and check the returned summary:
 

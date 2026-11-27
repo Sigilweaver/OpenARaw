@@ -41,10 +41,15 @@ read or decoded is yielded as an `Err`, and iteration continues with the
 next scan.
 
 Each `SpectrumRecord` carries `index`, `scan_number`, `native_id`,
-`ms_level`, `scan_mode` (`Centroid` or `Profile`), `analyzer` (`TOFMS` for
-Q-TOF, `TQMS` for QQQ), `retention_time_sec`, `mz`/`intensity` arrays, and
-- for MS2+ scans - a `precursor` (`PrecursorInfo`) populated either from
-the Q-TOF isolation target m/z or the QQQ MRM channel ID. See
+`ms_level`, `scan_mode` (`Centroid`, `Profile`, or `None` for a scan with
+no payload block), `analyzer` (`TOFMS` for Q-TOF, `TQMS` for QQQ),
+`retention_time_sec` (an `Option`, always `Some` from this reader),
+`mz`/`intensity` arrays, and
+- for MS2+ scans - a `precursor` (`PrecursorInfo`) populated from
+the Q-TOF isolation target m/z and collision energy (unit unknown). A QQQ
+MRM scan has a `precursor` with no `target_mz`, no `precursor_native_id` and
+no collision energy; its channel ID is in `extra["openaraw.mrm_channel_id"]`.
+See
 [Scan data](./scan-data) for how each field is derived from the on-disk
 records.
 

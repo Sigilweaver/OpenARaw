@@ -5,8 +5,9 @@ use std::sync::{mpsc, Mutex};
 
 use ::openaraw::reader::Reader;
 use openmassspec_core::{
-    Activation, Analyzer, ChromatogramRecord, CvTerm, MobilityArrayKind, Polarity, PrecursorInfo,
-    RunMetadata, ScanMode, SpectrumRecord, SpectrumSource,
+    Activation, Analyzer, ChromatogramRecord, CollisionEnergy, CollisionEnergyUnit, CvTerm,
+    MobilityArrayKind, Polarity, PrecursorInfo, RunMetadata, ScanMode, SpectrumRecord,
+    SpectrumSource,
 };
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -20,20 +21,27 @@ fn core_err(e: openmassspec_core::Error) -> PyErr {
     PyRuntimeError::new_err(e.to_string())
 }
 
-/// Python label of an analyzer. `"tofms"` predates the core label
-/// (`"tof"`) and is kept for compatibility.
-fn analyzer_str(a: Analyzer) -> &'static str {
-    match a {
-        Analyzer::TOFMS => "tofms",
-        other => other.as_str(),
-    }
-}
-
 fn cv_term_dict<'py>(py: Python<'py>, term: &CvTerm) -> PyResult<Bound<'py, PyDict>> {
     let d = PyDict::new(py);
     d.set_item("accession", term.accession.as_ref())?;
     d.set_item("name", term.name.as_ref())?;
     Ok(d)
+}
+
+/// One `{"value", "unit"}` dict per collision energy. `unit` is the Core
+/// label (`"ev"`, `"nce"`, ...) or None when the file does not state it.
+fn collision_energies_list<'py>(
+    py: Python<'py>,
+    energies: &[CollisionEnergy],
+) -> PyResult<Bound<'py, PyList>> {
+    let out = PyList::empty(py);
+    for ce in energies {
+        let d = PyDict::new(py);
+        d.set_item("value", ce.value)?;
+        d.set_item("unit", ce.unit.map(CollisionEnergyUnit::as_str))?;
+        out.append(d)?;
+    }
+    Ok(out)
 }
 
 fn precursor_dict<'py>(py: Python<'py>, p: &PrecursorInfo) -> PyResult<Bound<'py, PyDict>> {
@@ -43,11 +51,13 @@ fn precursor_dict<'py>(py: Python<'py>, p: &PrecursorInfo) -> PyResult<Bound<'py
     d.set_item("isolation_width", p.isolation_width)?;
     d.set_item("charge", p.charge)?;
     d.set_item("intensity", p.intensity)?;
-    d.set_item("collision_energy", p.collision_energy)?;
-    d.set_item("ce_is_nce", p.ce_is_nce)?;
+    d.set_item(
+        "collision_energies",
+        collision_energies_list(py, &p.collision_energies)?,
+    )?;
     d.set_item("precursor_native_id", &p.precursor_native_id)?;
     d.set_item("activation", p.activation.map(Activation::as_str))?;
-    d.set_item("analyzer", p.analyzer.map(analyzer_str))?;
+    d.set_item("analyzer", p.analyzer.map(Analyzer::as_str))?;
     d.set_item("ccs", p.ccs)?;
     Ok(d)
 }
@@ -79,7 +89,7 @@ fn run_info_dict<'py>(py: Python<'py>, m: &RunMetadata) -> PyResult<Bound<'py, P
         m.analyzers
             .iter()
             .copied()
-            .map(analyzer_str)
+            .map(Analyzer::as_str)
             .collect::<Vec<_>>(),
     )?;
     d.set_item("extra", &m.extra)?;
@@ -132,6 +142,22 @@ pub struct Spectrum {
     rec: SpectrumRecord,
 }
 
+impl Spectrum {
+    /// A value the scan record reported that Core does not take on a spectrum
+    /// with no peaks, as kept in `extra["openaraw.reported_<key>"]`.
+    fn reported_extra(&self, key: &str) -> PyResult<Option<f64>> {
+        let name = format!("openaraw.reported_{key}");
+        self.rec
+            .extra
+            .get(&name)
+            .map(|v| {
+                v.parse()
+                    .map_err(|e| PyRuntimeError::new_err(format!("{name} is not a number: {e}")))
+            })
+            .transpose()
+    }
+}
+
 #[pymethods]
 impl Spectrum {
     #[getter]
@@ -160,7 +186,7 @@ impl Spectrum {
     }
     #[getter]
     fn analyzer(&self) -> Option<&'static str> {
-        self.rec.analyzer.map(analyzer_str)
+        self.rec.analyzer.map(Analyzer::as_str)
     }
     #[getter]
     fn acquisition_event_id(&self) -> Option<u32> {
@@ -171,7 +197,7 @@ impl Spectrum {
         self.rec.filter.as_deref()
     }
     #[getter]
-    fn retention_time_sec(&self) -> f64 {
+    fn retention_time_sec(&self) -> Option<f64> {
         self.rec.retention_time_sec
     }
     #[getter]
@@ -187,16 +213,22 @@ impl Spectrum {
         self.rec.effective_base_peak().map(|p| p.0)
     }
     #[getter]
-    fn reported_base_peak_mz(&self) -> Option<f64> {
-        self.rec.base_peak_mz
+    fn reported_base_peak_mz(&self) -> PyResult<Option<f64>> {
+        match self.rec.base_peak_mz {
+            Some(v) => Ok(Some(v)),
+            None => self.reported_extra("base_peak_mz"),
+        }
     }
     #[getter]
     fn base_peak_intensity(&self) -> Option<f64> {
         self.rec.effective_base_peak().map(|p| p.1)
     }
     #[getter]
-    fn reported_base_peak_intensity(&self) -> Option<f64> {
-        self.rec.base_peak_intensity
+    fn reported_base_peak_intensity(&self) -> PyResult<Option<f64>> {
+        match self.rec.base_peak_intensity {
+            Some(v) => Ok(Some(v)),
+            None => self.reported_extra("base_peak_intensity"),
+        }
     }
     #[getter]
     fn low_mz(&self) -> Option<f64> {
@@ -247,11 +279,10 @@ impl Spectrum {
         self.rec.mz.len()
     }
     fn __repr__(&self) -> String {
-        format!(
-            "Spectrum({} peaks, RT {:.2}s)",
-            self.rec.mz.len(),
-            self.rec.retention_time_sec,
-        )
+        match self.rec.retention_time_sec {
+            Some(rt) => format!("Spectrum({} peaks, RT {:.2}s)", self.rec.mz.len(), rt),
+            None => format!("Spectrum({} peaks, no RT)", self.rec.mz.len()),
+        }
     }
 }
 

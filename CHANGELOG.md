@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-27
+
+This release moves to `openmassspec-core` 4 and ships as 2.0.0. Core's
+changes and how to adapt to them are in
+[MIGRATING-4.0.md](https://github.com/Sigilweaver/OpenMassSpecCore/blob/main/MIGRATING-4.0.md)
+in OpenMassSpecCore.
+
+### Changed
+
+- Python: the minimum version is 3.10 (`requires-python = ">=3.10"`), and
+  the wheel is one abi3 wheel built for 3.10 (`abi3-py310`) instead of a
+  wheel per interpreter.
+- Requires `openmassspec-core` 4.0.0. Collision energy is
+  `PrecursorInfo::collision_energies`, a list of value and unit;
+  `retention_time_sec` is `Option<f64>`; `SpectrumIter` and
+  `ChromatogramIter` are `Send`.
+- The collision energy of a Q-TOF MS/MS scan has an unknown unit. Core 3
+  wrote it as eV on the assumption that the field is in eV, but no file in
+  the bundle states the unit (see Known issues in the README). The reader
+  declares this in `RunMetadata::unstated`
+  (`Check::UnknownCollisionEnergyUnit`), so `write_mzml` converts every
+  Q-TOF MS/MS bundle with default options: the value is a unit-less
+  `userParam`, each MS/MS spectrum carries an `unknown_collision_energy_unit`
+  warning and the run carries one `unstated_by_source` warning. MS1-only and
+  MRM bundles are not affected.
+- A scan record that names neither a profile nor a centroid block has
+  `scan_mode = None` (it was `Centroid`). Core's writer rejects it unless
+  `unknown_scan_mode` is allowed. No corpus bundle has such a scan.
+- Python: the precursor dict has `collision_energies` (a list of
+  `{"value", "unit"}`; `unit` is `None`) in place of `collision_energy` and
+  `ce_is_nce`. `retention_time_sec` is `float | None`. The analyzer label of a
+  Q-TOF spectrum is `"tof"` (it was `"tofms"`).
+- The `to_mzml` example takes `--allow CHECK` (repeatable), prints the
+  write summary and exits with an error code instead of panicking.
+
+### Fixed
+
+- A spectrum with no peaks carries the Core warning `empty_spectrum` and
+  declares no base peak and no m/z range. Before, such a spectrum had no
+  flag and reported a base peak of 0 at m/z 0. The values in the scan record
+  stay in `extra` as `openaraw.reported_base_peak_mz`,
+  `openaraw.reported_base_peak_intensity`, `openaraw.reported_low_mz` and
+  `openaraw.reported_high_mz`. In `180814-Sample19.d` (CI fixture) this is
+  2,226 of 4,116 MS1 spectra; `Cdc19_ubp2_AQUA.d` has none. In Python,
+  `base_peak_mz` and `base_peak_intensity` of such a spectrum are `None`
+  (1.0.0 returned 0.0), and `low_mz` and `high_mz` are `None` (1.0.0 returned
+  the record's range when it had one; the empty MS1 records of the fixture
+  report none). `low_mz` and `high_mz` are the spectrum's own m/z range, as
+  Core defines them, so they stay `None` here; a range the record did report
+  is in `extra["openaraw.reported_low_mz"]` and
+  `extra["openaraw.reported_high_mz"]` (strings).
+  `reported_base_peak_mz` and `reported_base_peak_intensity` keep meaning
+  what the scan record reported and still return it for such a spectrum
+  (0.0 on the fixture), as in 1.0.0.
+- QQQ MRM spectra no longer carry `precursor_native_id = "mrm_channel=N"`.
+  That string named no spectrum, so it was a dangling `spectrumRef` in the
+  mzML. `precursor_native_id` holds a spectrum reference, not a channel, so the
+  channel number stays in `extra["openaraw.mrm_channel_id"]` (a `userParam` in
+  the mzML, `spectrum.extra` in Python).
+  Affects all 108 MRM bundles in the corpus. The Python `precursor` dict
+  has `precursor_native_id = None` for them.
+- Documentation no longer states that the collision energy is in eV.
+
 ## [1.0.0] - 2026-10-11
 
 This release changes the public Rust API (see Breaking, Changed and

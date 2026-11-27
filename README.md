@@ -36,10 +36,31 @@ Documentation: [sigilweaver.app/openaraw/docs](https://sigilweaver.app/openaraw/
   matching MS1 peak by about 32 ppm and 10 ppm. Use a precursor tolerance
   of at least 30 ppm, or re-pick the precursor from the MS1 scan. Q-TOF
   MS2 spectra have no parent-scan link, charge state or isolation width.
-- **Triple quadrupole (MRM) spectra report only the product m/z.** The
-  precursor m/z is not set and per-transition SRM chromatograms are not
-  emitted; each spectrum carries its MRM channel number
-  (`precursor_native_id = "mrm_channel=N"`). Product m/z values are stored
+- **Collision energy has no unit.** `MSScan.xsd` types the scan record's
+  `CollisionEnergy` as a bare double, and no other file in the bundle
+  states its unit. The `Volts` and `Voltage` units in `MSActualDefs.xml`
+  belong to telemetry channels (`Collision Energy:1` to `4`,
+  `Col. Cell Energy`) whose logged values differ from the scan records
+  (`Col. Cell Energy` logs about 3 where the records carry 40.0 in
+  PXD031771/526b_1.d), so they do not give the unit of the record's
+  field. The reader reports the value with an unknown unit and declares
+  the check `unknown_collision_energy_unit` in `RunMetadata::unstated`, so
+  `write_mzml` converts every Q-TOF MS/MS bundle (185 of the 332 readable
+  corpus bundles) with default options: the value is written as a
+  unit-less `userParam`, each MS/MS spectrum carries an
+  `openmassspec: warning unknown_collision_energy_unit` entry, and the run
+  carries one `unstated_by_source` warning. Do not read the number as eV
+  or NCE. In Python, `collision_energies[i]["unit"]` is `None`.
+- **Triple quadrupole (MRM) spectra have no stateable precursor.** The scan
+  record holds the product m/z and the MRM channel number
+  (`extra["openaraw.mrm_channel_id"]`); the Q1 m/z lives in the method
+  file and is not read. An MRM spectrum therefore has ms level 2, no
+  `target_mz`, `selected_mz` or `precursor_native_id`, and no collision
+  energy, and per-transition SRM chromatograms are not emitted. The mzML
+  writer accepts these spectra and the 108 MRM corpus bundles convert, but
+  Core's `assert_source_invariants` rejects them with `MissingPrecursor`,
+  so `tests/conformance.rs` checks the other invariants through a wrapper
+  that adds a placeholder `target_mz`. Product m/z values are stored
   directly and match the method's transitions.
 - **Bundles that cannot be decoded raise errors.** A Q-TOF bundle with
   neither `MSMassCal.bin` nor `DefaultMassCal.xml` has no calibration

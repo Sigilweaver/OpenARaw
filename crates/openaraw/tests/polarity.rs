@@ -13,7 +13,13 @@ fn polarities(path: &std::path::Path) -> Vec<(f64, Option<Polarity>)> {
         .iter_spectra()
         .map(|item| {
             let spectrum = item.expect("spectrum decodes");
-            (spectrum.retention_time_sec / 60.0, spectrum.polarity)
+            (
+                spectrum
+                    .retention_time_sec
+                    .expect("every spectrum has a retention time")
+                    / 60.0,
+                spectrum.polarity,
+            )
         })
         .collect()
 }

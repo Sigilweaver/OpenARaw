@@ -1,8 +1,9 @@
 //! High-level reader for an Agilent `.d` bundle directory.
 
 use openmassspec_core::{
-    Analyzer, ChromatogramIter, ChromatogramRecord, CvTerm, PrecursorInfo, RunMetadata, ScanMode,
-    SpectrumIter, SpectrumRecord, SpectrumSource,
+    Analyzer, Check, ChromatogramIter, ChromatogramRecord, CvTerm, Error, PrecursorInfo,
+    RecordProblem, RunMetadata, ScanMode, SpectrumIter, SpectrumRecord, SpectrumSource, Warning,
+    WarningKind,
 };
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -163,7 +164,12 @@ where
         if rec.ms_level != 1 {
             continue;
         }
-        time_sec.push(rec.retention_time_sec as f32);
+        // `Reader` sets a retention time on every spectrum; a source that did
+        // not would make a trace point with no time axis, so say so.
+        let rt = rec.retention_time_sec.ok_or_else(|| {
+            Error::record(rec.native_id.clone(), RecordProblem::MissingRetentionTime)
+        })?;
+        time_sec.push(rt as f32);
         tic.push(rec.effective_tic() as f32);
         bpc.push(rec.effective_base_peak().map_or(0.0, |(_, i)| i as f32));
     }
@@ -489,12 +495,13 @@ impl Reader {
     /// used when present; the centroid block when there is no profile
     /// block or the profile block holds no points. A present block that
     /// cannot be read or decoded is an error; there is no fallback from a
-    /// failed profile block to the centroid block.
+    /// failed profile block to the centroid block. A scan with no payload
+    /// block at all yields empty arrays and no scan mode.
     fn decode_peaks(
         &self,
         scan_idx: usize,
         rec: &ScanRecord,
-    ) -> crate::Result<(Vec<f64>, Vec<f32>, ScanMode)> {
+    ) -> crate::Result<(Vec<f64>, Vec<f32>, Option<ScanMode>)> {
         let calibration = self.calibration(scan_idx);
         if let Some(params) = &rec.profile_params {
             let spec = calibration
@@ -511,7 +518,7 @@ impl Reader {
                     self.record_decode_failure(PayloadKind::Profile, rec.scan_id, err)
                 })?;
             if !spec.mz.is_empty() || rec.centroid_params.is_none() {
-                return Ok((spec.mz, spec.intensity, ScanMode::Profile));
+                return Ok((spec.mz, spec.intensity, Some(ScanMode::Profile)));
             }
         }
 
@@ -522,10 +529,13 @@ impl Reader {
                     .map_err(|err| {
                         self.record_decode_failure(PayloadKind::Centroid, rec.scan_id, err)
                     })?;
-            return Ok((spec.mz, spec.intensity, ScanMode::Centroid));
+            return Ok((spec.mz, spec.intensity, Some(ScanMode::Centroid)));
         }
 
-        Ok((Vec::new(), Vec::new(), ScanMode::Centroid))
+        // The scan record names no payload block, so there is nothing to
+        // say whether it is profile or centroid: the mode stays unknown
+        // and the arrays are empty.
+        Ok((Vec::new(), Vec::new(), None))
     }
 
     /// Build the spectrum for scan `scan_idx`.
@@ -579,20 +589,26 @@ impl Reader {
         }
 
         let precursor = (rec.ms_level >= 2).then(|| {
-            let mut precursor = PrecursorInfo::default()
-                // The record holds no m/z field distinct from target_mz
-                // (selected_mz stays unset); see
-                // docs/format/06-known-limitations.md.
-                .with_collision_energy(rec.collision_energy);
-            if let Some(mrm_id) = rec.mrm_channel_id {
-                precursor = precursor.with_precursor_native_id(format!("mrm_channel={mrm_id}"));
-            } else if let Some(mz) = rec.target_mz {
+            // The record holds no m/z field distinct from target_mz
+            // (selected_mz stays unset); see
+            // docs/format/06-known-limitations.md.
+            //
+            // The collision energy has no unit: MSScan.xsd types the
+            // field as a bare double, and no other file in the bundle
+            // states a unit for it (see docs/format/01-msscan.md). The
+            // unit stays unknown rather than assumed to be eV.
+            let mut precursor =
+                PrecursorInfo::default().with_collision_energy(rec.collision_energy, None);
+            if let Some(mz) = rec.target_mz {
                 // Q-TOF MS2: the parent scan is the record's
                 // DataDependentScanParamType.DDScanID (per the bundle's
                 // MSScan.xsd), which is not decoded, so the precursor
                 // reference is left unset.
                 precursor = precursor.with_target_mz(mz);
             }
+            // QQQ MRM: the channel id is kept in
+            // extra["openaraw.mrm_channel_id"]. It names no spectrum, so
+            // it is not a precursor reference.
             precursor
         });
 
@@ -602,7 +618,22 @@ impl Reader {
         //   a drift-time field against. See
         //   docs/format/06-known-limitations.md#3-no-ion-mobility--ccs-support-agilent-6560-im-qtof.
         // - faims_cv: Agilent instruments have no FAIMS interface.
-        Ok(
+        let empty = mz.is_empty();
+        if empty {
+            // Core takes no base peak or m/z range on a spectrum with no
+            // peaks. What the record reported stays in `extra`.
+            for (key, value) in [
+                ("base_peak_mz", rec.base_peak_mz),
+                ("base_peak_intensity", rec.base_peak_intensity),
+                ("low_mz", rec.min_x),
+                ("high_mz", rec.max_x),
+            ] {
+                if let Some(value) = value {
+                    extra.insert(format!("openaraw.reported_{key}"), value.to_string());
+                }
+            }
+        }
+        let mut spectrum =
             SpectrumRecord::new(scan_idx, rec.scan_id, format!("scanId={}", rec.scan_id))
                 .with_ms_level(rec.ms_level)
                 .with_polarity(polarity)
@@ -610,14 +641,22 @@ impl Reader {
                 .with_analyzer(analyzer)
                 .with_retention_time_sec(rec.retention_time_min * 60.0)
                 .with_total_ion_current(rec.tic)
-                .with_base_peak_mz(rec.base_peak_mz)
-                .with_base_peak_intensity(rec.base_peak_intensity)
-                .with_low_mz(rec.min_x)
-                .with_high_mz(rec.max_x)
+                // A spectrum with no peaks declares no base peak and no m/z
+                // range, whatever the record's fields hold.
+                .with_base_peak_mz(rec.base_peak_mz.filter(|_| !empty))
+                .with_base_peak_intensity(rec.base_peak_intensity.filter(|_| !empty))
+                .with_low_mz(rec.min_x.filter(|_| !empty))
+                .with_high_mz(rec.max_x.filter(|_| !empty))
                 .with_precursor(precursor)
                 .with_peaks(mz, intensity)
-                .with_extra_map(extra),
-        )
+                .with_extra_map(extra);
+        if empty {
+            spectrum = spectrum.with_warning(Warning::new(
+                WarningKind::EmptySpectrum,
+                "the scan record holds no peaks",
+            ));
+        }
+        Ok(spectrum)
     }
 }
 
@@ -656,6 +695,9 @@ impl SpectrumSource for Reader {
             env!("CARGO_PKG_VERSION"),
         )
         .with_start_timestamp(self.start_timestamp.clone())
+        // No file in an Agilent bundle states the unit of the scan-record
+        // collision energy (docs/format/01-msscan.md).
+        .with_unstated(Check::UnknownCollisionEnergyUnit)
         .with_extra_map(extra)
     }
 
@@ -853,6 +895,64 @@ mod tests {
     }
 
     #[test]
+    fn collision_energy_has_no_assumed_unit() {
+        let record = ScanRecord {
+            scan_id: 42,
+            retention_time_min: 1.0,
+            ms_level: 2,
+            min_x: None,
+            max_x: None,
+            tic: None,
+            base_peak_mz: None,
+            base_peak_intensity: None,
+            calibration_id: None,
+            ion_polarity: 0,
+            mrm_channel_id: None,
+            target_mz: Some(500.25),
+            collision_energy: Some(20.0),
+            profile_params: None,
+            centroid_params: None,
+        };
+        let mut reader = reader_with_records(284, vec![record]);
+        let spectrum = reader.iter_spectra().next().unwrap().unwrap();
+        let precursor = spectrum.precursor.expect("MS2 has precursor info");
+        assert_eq!(
+            precursor.collision_energies,
+            vec![openmassspec_core::CollisionEnergy::new(20.0, None)]
+        );
+    }
+
+    #[test]
+    fn mrm_precursor_has_no_spectrum_reference() {
+        let record = ScanRecord {
+            scan_id: 9,
+            retention_time_min: 1.0,
+            ms_level: 2,
+            min_x: None,
+            max_x: None,
+            tic: None,
+            base_peak_mz: None,
+            base_peak_intensity: None,
+            calibration_id: None,
+            ion_polarity: 0,
+            mrm_channel_id: Some(3),
+            target_mz: None,
+            collision_energy: None,
+            profile_params: None,
+            centroid_params: None,
+        };
+        let mut reader = reader_with_records(196, vec![record]);
+        let spectrum = reader.iter_spectra().next().unwrap().unwrap();
+        let precursor = spectrum.precursor.expect("MS2 has precursor info");
+        assert_eq!(precursor.precursor_native_id, None);
+        assert!(precursor.collision_energies.is_empty());
+        assert_eq!(
+            spectrum.extra.get("openaraw.mrm_channel_id"),
+            Some(&"3".to_string())
+        );
+    }
+
+    #[test]
     fn unreadable_payloads_are_errors() {
         let params = |format_id| crate::raw::msscan::SpectrumParams {
             format_id,
@@ -938,12 +1038,92 @@ mod tests {
         let mut reader = reader_with_records(284, vec![record]);
 
         let spectrum = reader.iter_spectra().next().unwrap().unwrap();
-        assert_eq!(spectrum.base_peak_mz, Some(513.9653233122384));
-        assert_eq!(spectrum.base_peak_intensity, Some(1_572_319.625));
+        // The record has no payload block, so the spectrum has no peaks and
+        // declares no base peak or range; the reported values are kept.
+        assert_eq!(spectrum.base_peak_mz, None);
+        assert_eq!(spectrum.base_peak_intensity, None);
+        assert_eq!(
+            spectrum.extra.get("openaraw.reported_base_peak_mz"),
+            Some(&"513.9653233122384".to_string())
+        );
+        assert_eq!(
+            spectrum.extra.get("openaraw.reported_high_mz"),
+            Some(&"1000".to_string())
+        );
         assert_eq!(spectrum.total_ion_current, Some(2.5e7));
         assert_eq!(
             spectrum.extra.get("openaraw.calibration_id"),
             Some(&"1".to_string())
+        );
+    }
+
+    #[test]
+    fn scan_without_a_payload_block_has_no_scan_mode() {
+        let record = ScanRecord {
+            scan_id: 1,
+            retention_time_min: 0.5,
+            ms_level: 1,
+            min_x: None,
+            max_x: None,
+            tic: None,
+            base_peak_mz: None,
+            base_peak_intensity: None,
+            calibration_id: None,
+            ion_polarity: 0,
+            mrm_channel_id: None,
+            target_mz: None,
+            collision_energy: None,
+            profile_params: None,
+            centroid_params: None,
+        };
+        let mut reader = reader_with_records(220, vec![record]);
+        let spectrum = reader.iter_spectra().next().unwrap().unwrap();
+        assert_eq!(spectrum.scan_mode, None);
+        assert!(spectrum.mz.is_empty());
+    }
+
+    #[test]
+    fn empty_spectrum_is_flagged_and_declares_no_base_peak_or_range() {
+        let record = ScanRecord {
+            scan_id: 1,
+            retention_time_min: 0.5,
+            ms_level: 1,
+            min_x: Some(100.0),
+            max_x: Some(1700.0),
+            tic: Some(0.0),
+            base_peak_mz: Some(0.0),
+            base_peak_intensity: Some(0.0),
+            calibration_id: None,
+            ion_polarity: 0,
+            mrm_channel_id: None,
+            target_mz: None,
+            collision_energy: None,
+            profile_params: None,
+            centroid_params: None,
+        };
+        let mut reader = reader_with_records(220, vec![record]);
+        let spectrum = reader.iter_spectra().next().unwrap().unwrap();
+        assert!(spectrum.mz.is_empty());
+        assert_eq!(spectrum.base_peak_mz, None);
+        assert_eq!(spectrum.base_peak_intensity, None);
+        assert_eq!(spectrum.low_mz, None);
+        assert_eq!(spectrum.high_mz, None);
+        assert_eq!(
+            spectrum.extra.get("openaraw.reported_low_mz"),
+            Some(&"100".to_string())
+        );
+        assert!(spectrum
+            .warnings
+            .iter()
+            .any(|w| w.kind == WarningKind::EmptySpectrum));
+    }
+
+    #[test]
+    fn run_metadata_declares_the_unstated_collision_energy_unit() {
+        let reader = reader_with_records(284, Vec::new());
+        assert_eq!(
+            reader.run_metadata().unstated,
+            vec![Check::UnknownCollisionEnergyUnit]
         );
     }
 
@@ -1064,6 +1244,23 @@ mod tests {
         assert_eq!(bpc.time_sec, vec![60.0, 120.0]);
         // BPC = the most intense point in each MS1 scan.
         assert_eq!(bpc.intensity, vec![30.0, 50.0]);
+    }
+
+    #[test]
+    fn summary_chromatograms_reject_a_spectrum_without_retention_time() {
+        let mut rec = SpectrumRecord::new(0, 1, "scanId=1").with_ms_level(1);
+        rec.retention_time_sec = None;
+        let err = summary_chromatograms(vec![Ok(rec)].into_iter()).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                Error::Record {
+                    problem: RecordProblem::MissingRetentionTime,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
     }
 
     #[test]

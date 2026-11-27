@@ -40,6 +40,85 @@ def test_decoded_fields():
         assert len(chrom["time_sec"]) == len(chrom["intensity"])
 
 
+def _bundle(env: str, default: str) -> Path:
+    path = Path(os.environ.get(env, default))
+    if not path.is_dir():
+        if os.environ.get("REQUIRE_CORPUS") == "1":
+            pytest.fail(f"REQUIRE_CORPUS=1 but bundle {path} is missing")
+        pytest.skip(f"set {env} to an Agilent bundle")
+    return path
+
+
+def test_qtof_ms2_record_keys():
+    """MS/MS records carry collision_energies (value and unit), no unit assumed."""
+    path = _bundle("OPENARAW_TEST_BUNDLE", "corpus/180814-Sample19.d")
+    reader = openaraw.RawReader(str(path))
+    ms2 = [
+        reader.read_spectrum(i)
+        for i in range(reader.scan_count)
+        if reader.read_spectrum(i).ms_level == 2
+    ]
+    assert ms2, "the fixture has MS/MS spectra"
+    spectrum = ms2[0]
+    precursor = spectrum.precursor
+    assert "collision_energy" not in precursor
+    assert "ce_is_nce" not in precursor
+    energies = precursor["collision_energies"]
+    assert len(energies) == 1
+    assert set(energies[0]) == {"value", "unit"}
+    assert energies[0]["value"] > 0
+    # The file states no unit for the scan record's CollisionEnergy field.
+    assert energies[0]["unit"] is None
+    # The value is the scan record's, unchanged.
+    index = reader.scan_index()["records"]
+    raw = [r for r in index if r["ms_level"] == 2][0]
+    assert energies[0]["value"] == raw["collision_energy"]
+    assert precursor["target_mz"] == raw["target_mz"]
+    assert isinstance(spectrum.retention_time_sec, float)
+    assert spectrum.analyzer == "tof"
+
+
+def test_empty_spectrum_reported_values():
+    """An empty spectrum declares no base peak or range; the record's values stay readable."""
+    path = _bundle("OPENARAW_TEST_BUNDLE", "corpus/180814-Sample19.d")
+    reader = openaraw.RawReader(str(path))
+    empty = [
+        s
+        for s in (reader.read_spectrum(i) for i in range(reader.scan_count))
+        if len(s) == 0 and s.ms_level == 1
+    ]
+    assert empty, "the fixture has empty MS1 spectra"
+    spectrum = empty[0]
+    # What the spectrum declares: nothing.
+    assert spectrum.base_peak_mz is None
+    assert spectrum.base_peak_intensity is None
+    assert spectrum.low_mz is None
+    assert spectrum.high_mz is None
+    # What the scan record reported, unchanged from 1.0.0.
+    extra = spectrum.extra
+    assert spectrum.reported_base_peak_mz == float(extra["openaraw.reported_base_peak_mz"])
+    assert spectrum.reported_base_peak_intensity == float(
+        extra["openaraw.reported_base_peak_intensity"]
+    )
+    # The fixture's empty MS1 records report a base peak of 0 and no range.
+    assert spectrum.reported_base_peak_mz == 0.0
+    assert spectrum.reported_base_peak_intensity == 0.0
+    assert "openaraw.reported_low_mz" not in extra
+
+
+def test_mrm_record_keys():
+    """MRM precursors carry no spectrum reference and no collision energy."""
+    path = _bundle("OPENARAW_TEST_MRM_BUNDLE", "corpus/Cdc19_ubp2_AQUA.d")
+    reader = openaraw.RawReader(str(path))
+    spectrum = reader.read_spectrum(0)
+    assert spectrum.ms_level == 2
+    assert spectrum.analyzer == "tqms"
+    precursor = spectrum.precursor
+    assert precursor["precursor_native_id"] is None
+    assert precursor["collision_energies"] == []
+    assert "openaraw.mrm_channel_id" in spectrum.extra
+
+
 def test_undecodable_scans_raise():
     # PXD022473/M.d: scan records point into an MSProfile.bin the upload
     # lacks, so no scan can be decoded.
