@@ -41,6 +41,9 @@ env:
   # year/month archive paths.
   PRIDE_DZIP_URL: >-
     https://ftp.pride.ebi.ac.uk/pride/data/archive/2022/03/PXD004747/Cdc19_ubp2_AQUA.d.zip
+  PRIDE_DZIP_FALLBACK_URL: >-
+    https://ftp.ebi.ac.uk/pride/data/archive/2022/03/PXD004747/Cdc19_ubp2_AQUA.d.zip
+  PRIDE_DZIP_SHA256: dae9f50531d3a0645a5f98931d57c3998da8ff8227df5fd9ff3001321575fab3
   CORPUS_DZIP_NAME: Cdc19_ubp2_AQUA.d.zip
   # Small QTOF (Agilent 6550) bundle (~3 MB unpacked, ~960 KB zipped) from
   # PRIDE PXD030293, used as the CI corpus-download fixture for
@@ -48,6 +51,9 @@ env:
   # Sigilweaver/OpenARaw#28.
   PRIDE_DZIP_URL_QTOF: >-
     https://ftp.pride.ebi.ac.uk/pride/data/archive/2022/07/PXD030293/180814-Sample19.d.zip
+  PRIDE_DZIP_QTOF_FALLBACK_URL: >-
+    https://ftp.ebi.ac.uk/pride/data/archive/2022/07/PXD030293/180814-Sample19.d.zip
+  PRIDE_DZIP_QTOF_SHA256: 54309c9f6bdc20f846a278fad2bad0f0500e0689294a8d2135c1db6392c755d1
   CORPUS_DZIP_NAME_QTOF: 180814-Sample19.d.zip
   # Keep these directory names in sync with
   # crates/openaraw/tests/conformance.rs's qqq_fixture()/qtof_fixture()
@@ -82,14 +88,15 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Download corpus fixtures for conformance tests
-        shell: bash
-        run: |
-          mkdir -p "$CORPUS_DIR"
-          curl -fsSL --retry 3 --user-agent "OpenARaw-CI/1.0" -o "$CORPUS_DIR/$CORPUS_DZIP_NAME" "$PRIDE_DZIP_URL"
-          echo "Downloaded $(du -sh "$CORPUS_DIR/$CORPUS_DZIP_NAME" | cut -f1) QQQ corpus fixture archive"
-          curl -fsSL --retry 3 --user-agent "OpenARaw-CI/1.0" -o "$CORPUS_DIR/$CORPUS_DZIP_NAME_QTOF" "$PRIDE_DZIP_URL_QTOF"
-          echo "Downloaded $(du -sh "$CORPUS_DIR/$CORPUS_DZIP_NAME_QTOF" | cut -f1) QTOF corpus fixture archive"
+      - name: Fetch corpus fixtures for conformance tests
+        timeout-minutes: 20
+        uses: Sigilweaver/ops/.github/actions/fetch-fixture@cf88ab9d4e06ce360ee0659bde8d10081ea4de17
+        with:
+          destination: ${{ env.CORPUS_DIR }}
+          user-agent: OpenARaw-CI/1.0
+          fixtures: |
+            ${{ env.CORPUS_DZIP_NAME }} ${{ env.PRIDE_DZIP_SHA256 }} ${{ env.PRIDE_DZIP_URL }} ${{ env.PRIDE_DZIP_FALLBACK_URL }}
+            ${{ env.CORPUS_DZIP_NAME_QTOF }} ${{ env.PRIDE_DZIP_QTOF_SHA256 }} ${{ env.PRIDE_DZIP_URL_QTOF }} ${{ env.PRIDE_DZIP_QTOF_FALLBACK_URL }}
 
       - name: Extract corpus fixtures (Unix)
         if: runner.os != 'Windows'
