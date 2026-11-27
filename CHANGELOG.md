@@ -49,7 +49,16 @@ in OpenMassSpecCore.
   `openaraw.reported_base_peak_intensity`, `openaraw.reported_low_mz` and
   `openaraw.reported_high_mz`. In `180814-Sample19.d` (CI fixture) this is
   2,226 of 4,116 MS1 spectra; `Cdc19_ubp2_AQUA.d` has none. In Python,
-  `base_peak_mz` and `base_peak_intensity` of such a spectrum are `None`.
+  `base_peak_mz` and `base_peak_intensity` of such a spectrum are `None`
+  (1.0.0 returned 0.0), and `low_mz` and `high_mz` are `None` (1.0.0 returned
+  the record's range when it had one; the empty MS1 records of the fixture
+  report none). `low_mz` and `high_mz` are the spectrum's own m/z range, as
+  Core defines them, so they stay `None` here; a range the record did report
+  is in `extra["openaraw.reported_low_mz"]` and
+  `extra["openaraw.reported_high_mz"]` (strings).
+  `reported_base_peak_mz` and `reported_base_peak_intensity` keep meaning
+  what the scan record reported and still return it for such a spectrum
+  (0.0 on the fixture), as in 1.0.0.
 - QQQ MRM spectra no longer carry `precursor_native_id = "mrm_channel=N"`.
   That string named no spectrum, so it was a dangling `spectrumRef` in the
   mzML. `precursor_native_id` holds a spectrum reference, not a channel, so the

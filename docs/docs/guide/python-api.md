@@ -49,8 +49,18 @@ for i in range(reader.scan_count):
 | `retention_time_sec`  | `float \| None` | Retention time in seconds (always set by this reader) |
 | `scan_mode`           | `str \| None` | `"profile"`, `"centroid"`, or `None` for a scan with no payload block |
 | `analyzer`            | `str \| None` | `"tof"` (Q-TOF) or `"tqms"` (QQQ)    |
+| `base_peak_mz`, `base_peak_intensity` | `float \| None` | Base peak of the decoded peaks; `None` when the spectrum has no peaks |
+| `low_mz`, `high_mz`   | `float \| None` | Lowest and highest m/z of the spectrum, as the scan record gives them; `None` when the spectrum has no peaks |
+| `reported_base_peak_mz`, `reported_base_peak_intensity` | `float \| None` | The base peak the scan record reported, also on a spectrum with no peaks |
 | `precursor`           | `dict \| None` | MS2+ only, see below                 |
 | `extra`               | `dict[str, str]` | Reader-specific values, such as `openaraw.mrm_channel_id` |
+
+A spectrum with no peaks (`len(spectrum) == 0`) declares no base peak and no
+m/z range: `base_peak_mz`, `base_peak_intensity`, `low_mz` and `high_mz` are
+`None`. The `reported_*` attributes still return what the scan record held
+(for example `reported_base_peak_mz` of 0.0). A range the record reported is kept as
+strings in `extra["openaraw.reported_low_mz"]` and
+`extra["openaraw.reported_high_mz"]`.
 
 `len(spectrum)` returns the peak count. See [Scan data](./scan-data) for
 how `mz`/`intensity` are derived from the on-disk profile and centroid

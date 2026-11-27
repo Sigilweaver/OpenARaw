@@ -142,6 +142,22 @@ pub struct Spectrum {
     rec: SpectrumRecord,
 }
 
+impl Spectrum {
+    /// A value the scan record reported that Core does not take on a spectrum
+    /// with no peaks, as kept in `extra["openaraw.reported_<key>"]`.
+    fn reported_extra(&self, key: &str) -> PyResult<Option<f64>> {
+        let name = format!("openaraw.reported_{key}");
+        self.rec
+            .extra
+            .get(&name)
+            .map(|v| {
+                v.parse()
+                    .map_err(|e| PyRuntimeError::new_err(format!("{name} is not a number: {e}")))
+            })
+            .transpose()
+    }
+}
+
 #[pymethods]
 impl Spectrum {
     #[getter]
@@ -197,16 +213,22 @@ impl Spectrum {
         self.rec.effective_base_peak().map(|p| p.0)
     }
     #[getter]
-    fn reported_base_peak_mz(&self) -> Option<f64> {
-        self.rec.base_peak_mz
+    fn reported_base_peak_mz(&self) -> PyResult<Option<f64>> {
+        match self.rec.base_peak_mz {
+            Some(v) => Ok(Some(v)),
+            None => self.reported_extra("base_peak_mz"),
+        }
     }
     #[getter]
     fn base_peak_intensity(&self) -> Option<f64> {
         self.rec.effective_base_peak().map(|p| p.1)
     }
     #[getter]
-    fn reported_base_peak_intensity(&self) -> Option<f64> {
-        self.rec.base_peak_intensity
+    fn reported_base_peak_intensity(&self) -> PyResult<Option<f64>> {
+        match self.rec.base_peak_intensity {
+            Some(v) => Ok(Some(v)),
+            None => self.reported_extra("base_peak_intensity"),
+        }
     }
     #[getter]
     fn low_mz(&self) -> Option<f64> {
