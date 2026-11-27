@@ -47,8 +47,9 @@ no payload block), `analyzer` (`TOFMS` for Q-TOF, `TQMS` for QQQ),
 `mz`/`intensity` arrays, and
 - for MS2+ scans - a `precursor` (`PrecursorInfo`) populated from
 the Q-TOF isolation target m/z and collision energy (unit unknown). A QQQ
-MRM scan has an empty `precursor`; its channel ID is in
-`extra["openaraw.mrm_channel_id"]`. See
+MRM scan has a `precursor` with no `target_mz`, no `precursor_native_id` and
+no collision energy; its channel ID is in `extra["openaraw.mrm_channel_id"]`.
+See
 [Scan data](./scan-data) for how each field is derived from the on-disk
 records.
 
