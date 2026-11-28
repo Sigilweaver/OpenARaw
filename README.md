@@ -1,6 +1,7 @@
 # OpenARaw
 
 [![CI](https://github.com/Sigilweaver/OpenARaw/actions/workflows/ci.yml/badge.svg)](https://github.com/Sigilweaver/OpenARaw/actions/workflows/ci.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24585585.svg)](https://doi.org/10.5281/zenodo.24585585)
 [![crates.io](https://img.shields.io/crates/v/openaraw.svg)](https://crates.io/crates/openaraw)
 [![PyPI](https://img.shields.io/pypi/v/openaraw.svg)](https://pypi.org/project/openaraw/)
 [![docs.rs](https://img.shields.io/docsrs/openaraw)](https://docs.rs/openaraw)
